@@ -794,20 +794,19 @@ async def signup(user_data: UserSignup):
     
     # Automatically generate unique wallets for new user
     try:
-        # Generate Bitcoin wallet (BTC, BCH, BSV)
-        bitcoin_wallet = wallet_service.get_or_create_wallet(user_data.username)
+        # Generate unified wallet (Bitcoin + Ethereum)
+        unified_wallet = wallet_service.get_or_create_wallet(user_data.username)
         
-        # Generate Solana wallet
+        # Generate Solana wallet (separate service)
         solana_wallet = solana_wallet_service.get_or_create_solana_wallet(user_data.username)
         
-        # Generate Ethereum wallet
-        ethereum_wallet = ethereum_wallet_service.get_or_create_ethereum_wallet(user_data.username)
-        
         # Log wallet creation
+        ethereum_data = unified_wallet.get("ethereum", {})
         audit_log.log_user_activity(user_data.username, "wallets_auto_created", {
-            "bitcoin_address": bitcoin_wallet["addresses"]["BTC"],
+            "bitcoin_address": unified_wallet["addresses"]["BTC"],
             "solana_address": solana_wallet["address"],
-            "ethereum_address": ethereum_wallet["address"],
+            "ethereum_address": ethereum_data.get("address", unified_wallet["addresses"].get("ETH", "")),
+            "base_address": ethereum_data.get("base_address", ethereum_data.get("address", unified_wallet["addresses"].get("BASE", ""))),  # Base (Layer 2) - preferred
             "timestamp": datetime.datetime.now().isoformat()
         })
     except Exception as e:
@@ -836,19 +835,22 @@ async def login(credentials: UserLogin):
     if not user:
         raise HTTPException(status_code=401, detail="Invalid username or password")
     
-    token = create_token(credentials.username)
+    # Use the correct username case from the authenticated user
+    actual_username = user.get("username", credentials.username)
+    
+    token = create_token(actual_username)
     assistant = None
     if user.get("assistant_id"):
         assistant = auth.get_assistant(user["assistant_id"])
     
-    # Log login activity
-    audit_log.log_user_activity(credentials.username, "account_login", {
+    # Log login activity with correct username
+    audit_log.log_user_activity(actual_username, "account_login", {
         "timestamp": datetime.datetime.now().isoformat()
     })
     
     return {
         "token": token,
-        "username": credentials.username,
+        "username": actual_username,  # Return correct case
         "assistant": assistant,
         "onboarding_complete": user.get("onboarding_complete", False),
         "message": "Login successful"
@@ -1005,6 +1007,7 @@ async def get_favorite_skills(authorization: Optional[str] = Header(None)):
     if not username:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
+    from skill_executor import get_user_data_dir
     user_data_dir = get_user_data_dir(username)
     favorites_file = user_data_dir / "favorite_skills.json"
     
@@ -1032,6 +1035,7 @@ async def update_favorite_skill(request: dict, authorization: Optional[str] = He
     if not skill_id:
         raise HTTPException(status_code=400, detail="skill_id is required")
     
+    from skill_executor import get_user_data_dir
     user_data_dir = get_user_data_dir(username)
     favorites_file = user_data_dir / "favorite_skills.json"
     
@@ -1070,6 +1074,7 @@ async def get_assistants(authorization: Optional[str] = Header(None)):
     if not username:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
+    from skill_executor import get_user_data_dir
     user_data_dir = get_user_data_dir(username)
     assistants_file = user_data_dir / "assistants.json"
     
@@ -1102,6 +1107,7 @@ async def create_assistant_chat(request: dict, authorization: Optional[str] = He
     session_id = str(uuid.uuid4())
     
     # Store session data
+    from skill_executor import get_user_data_dir
     user_data_dir = get_user_data_dir(username)
     sessions_dir = user_data_dir / "assistant_sessions"
     sessions_dir.mkdir(parents=True, exist_ok=True)
@@ -1203,6 +1209,7 @@ async def assistant_chat_message(session_id: str, request: dict, authorization: 
         raise HTTPException(status_code=400, detail="Message is required")
     
     # Load session
+    from skill_executor import get_user_data_dir
     user_data_dir = get_user_data_dir(username)
     sessions_dir = user_data_dir / "assistant_sessions"
     session_file = sessions_dir / f"{session_id}.json"
@@ -1315,6 +1322,7 @@ async def finalize_assistant(session_id: str, request: dict, authorization: Opti
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     # Load session
+    from skill_executor import get_user_data_dir
     user_data_dir = get_user_data_dir(username)
     sessions_dir = user_data_dir / "assistant_sessions"
     session_file = sessions_dir / f"{session_id}.json"
@@ -1377,6 +1385,7 @@ async def get_assistant_session(session_id: str, authorization: Optional[str] = 
     if not username:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
+    from skill_executor import get_user_data_dir
     user_data_dir = get_user_data_dir(username)
     sessions_dir = user_data_dir / "assistant_sessions"
     session_file = sessions_dir / f"{session_id}.json"
@@ -1710,6 +1719,38 @@ async def get_skill_data(skill_id: str, authorization: Optional[str] = Header(No
             except Exception:
                 pass
         return {"data": [], "type": "expenses"}
+    elif skill_id == "business_manager":
+        business_file = user_data_dir / "business.json"
+        if business_file.exists():
+            try:
+                with open(business_file, 'r') as f:
+                    business_data = json.load(f)
+                    return {"data": business_data, "type": "business"}
+            except Exception:
+                pass
+        # Return default structure if file doesn't exist
+        return {
+            "data": {
+                "business_name": "My Business",
+                "expenses": [],
+                "income": [],
+                "customers": [],
+                "operating_hours": {
+                    "monday": {"open": "09:00", "close": "17:00", "closed": False},
+                    "tuesday": {"open": "09:00", "close": "17:00", "closed": False},
+                    "wednesday": {"open": "09:00", "close": "17:00", "closed": False},
+                    "thursday": {"open": "09:00", "close": "17:00", "closed": False},
+                    "friday": {"open": "09:00", "close": "17:00", "closed": False},
+                    "saturday": {"open": "10:00", "close": "14:00", "closed": False},
+                    "sunday": {"open": "", "close": "", "closed": True}
+                },
+                "settings": {
+                    "currency": "USD",
+                    "timezone": "America/New_York"
+                }
+            },
+            "type": "business"
+        }
     
     else:
         raise HTTPException(status_code=404, detail="Skill data endpoint not available for this skill")
@@ -1734,7 +1775,7 @@ async def get_wallet_balances(authorization: Optional[str] = Header(None)):
     balances = {
         "bitcoin": {"btc": 0, "bch": 0, "bsv": 0, "usd": 0},
         "solana": {"sol": 0, "usd": 0},
-        "ethereum": {"eth": 0, "usd": 0}
+        "ethereum": {"eth": 0, "base": 0, "usd": 0, "preferred_network": "base"}  # BIAS: Base is preferred
     }
     
     # Fetch Bitcoin balances (BTC, BCH, BSV) - using public APIs
@@ -1757,14 +1798,26 @@ async def get_wallet_balances(authorization: Optional[str] = Header(None)):
     except Exception as e:
         print(f"Error fetching Solana balance: {e}")
     
-    # Fetch Ethereum balance
+    # Fetch Ethereum balance (with Base bias) - use unified wallet structure
     try:
-        ethereum_wallet = ethereum_wallet_service.load_ethereum_wallet(username)
-        if ethereum_wallet:
+        # Use unified wallet structure - Ethereum is now included in main wallet
+        if wallet and wallet.get("ethereum"):
+            ethereum_data = wallet["ethereum"]
             # Placeholder - would need actual Ethereum RPC call
-            # balances["ethereum"]["eth"] = await fetch_ethereum_balance(ethereum_wallet["address"])
+            # balances["ethereum"]["eth"] = await fetch_ethereum_balance(ethereum_data["address"])
             # ETH price ~$2000 (placeholder - should fetch from API)
             balances["ethereum"]["usd"] = 0  # balances["ethereum"]["eth"] * 2000
+            
+            # Base (Layer 2) uses the same address, so balance would be fetched from Base network
+            # BIAS: Base is the preferred network, so prioritize Base balance
+            # balances["ethereum"]["base"] = await fetch_base_balance(ethereum_data.get("base_address", ethereum_data["address"]))
+            balances["ethereum"]["base"] = 0  # Placeholder
+        # Fallback to separate ethereum_wallet_service for backward compatibility
+        else:
+            ethereum_wallet = ethereum_wallet_service.load_ethereum_wallet(username)
+            if ethereum_wallet:
+                balances["ethereum"]["usd"] = 0
+                balances["ethereum"]["base"] = 0
     except Exception as e:
         print(f"Error fetching Ethereum balance: {e}")
     
@@ -1786,7 +1839,7 @@ async def get_total_account_value(authorization: Optional[str] = Header(None)):
     balances = {
         "bitcoin": {"btc": 0, "bch": 0, "bsv": 0, "usd": 0},
         "solana": {"sol": 0, "usd": 0},
-        "ethereum": {"eth": 0, "usd": 0}
+        "ethereum": {"eth": 0, "base": 0, "usd": 0, "preferred_network": "base"}  # BIAS: Base is preferred
     }
     
     # Fetch Solana balance
@@ -1800,14 +1853,26 @@ async def get_total_account_value(authorization: Optional[str] = Header(None)):
     except Exception as e:
         print(f"Error fetching Solana balance: {e}")
     
-    # Fetch Ethereum balance
+    # Fetch Ethereum balance (with Base bias) - use unified wallet structure
     try:
-        ethereum_wallet = ethereum_wallet_service.load_ethereum_wallet(username)
-        if ethereum_wallet:
+        # Use unified wallet structure - Ethereum is now included in main wallet
+        if wallet and wallet.get("ethereum"):
+            ethereum_data = wallet["ethereum"]
             # Placeholder - would need actual Ethereum RPC call
-            # balances["ethereum"]["eth"] = await fetch_ethereum_balance(ethereum_wallet["address"])
+            # balances["ethereum"]["eth"] = await fetch_ethereum_balance(ethereum_data["address"])
             # ETH price ~$2000 (placeholder - should fetch from API)
             balances["ethereum"]["usd"] = 0  # balances["ethereum"]["eth"] * 2000
+            
+            # Base (Layer 2) uses the same address, so balance would be fetched from Base network
+            # BIAS: Base is the preferred network, so prioritize Base balance
+            # balances["ethereum"]["base"] = await fetch_base_balance(ethereum_data.get("base_address", ethereum_data["address"]))
+            balances["ethereum"]["base"] = 0  # Placeholder
+        # Fallback to separate ethereum_wallet_service for backward compatibility
+        else:
+            ethereum_wallet = ethereum_wallet_service.load_ethereum_wallet(username)
+            if ethereum_wallet:
+                balances["ethereum"]["usd"] = 0
+                balances["ethereum"]["base"] = 0
     except Exception as e:
         print(f"Error fetching Ethereum balance: {e}")
     
@@ -1841,6 +1906,7 @@ async def get_wallet(authorization: Optional[str] = Header(None)):
         # Wallet already exists - return it (no duplicate creation)
         return {
             "addresses": existing_wallet["addresses"],
+            "ethereum": existing_wallet.get("ethereum", {}),
             "created_at": existing_wallet.get("created_at"),
             "has_wallet": True
         }
@@ -1851,14 +1917,221 @@ async def get_wallet(authorization: Optional[str] = Header(None)):
     # Log wallet creation
     audit_log.log_user_activity(username, "wallet_created", {
         "addresses": wallet["addresses"],
+        "ethereum": wallet.get("ethereum", {}),
         "created_at": wallet.get("created_at")
     })
     
     # Only return addresses in API response (WIF/seed only in download)
     return {
         "addresses": wallet["addresses"],
+        "ethereum": wallet.get("ethereum", {}),
         "created_at": wallet.get("created_at"),
         "has_wallet": True
+    }
+
+
+@app.get("/api/wallet/solana")
+async def get_solana_wallet(authorization: Optional[str] = Header(None)):
+    """Get the current user's first Solana wallet (or create if doesn't exist) - backward compatibility"""
+    username = get_current_user(authorization)
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    # Get or create Solana wallet (returns first wallet)
+    wallet = solana_wallet_service.get_or_create_solana_wallet(username)
+    
+    # Log wallet access
+    audit_log.log_user_activity(username, "solana_wallet_accessed", {
+        "public_key": wallet.get("public_key"),
+        "created_at": wallet.get("created_at")
+    })
+    
+    # Return wallet info (without private key for security)
+    return {
+        "public_key": wallet.get("public_key"),
+        "address": wallet.get("address"),
+        "created_at": wallet.get("created_at"),
+        "has_wallet": True
+    }
+
+
+@app.get("/api/wallet/solana/all")
+async def get_all_solana_wallets(authorization: Optional[str] = Header(None)):
+    """Get all Solana wallets for the current user"""
+    username = get_current_user(authorization)
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    wallets = solana_wallet_service.load_all_solana_wallets(username)
+    
+    # If no wallets exist, create one
+    if not wallets or len(wallets) == 0:
+        wallet = solana_wallet_service.get_or_create_solana_wallet(username)
+        wallets = [wallet]
+    
+    # Return wallets without private keys for security
+    return {
+        "wallets": [
+            {
+                "address": w.get("address"),
+                "public_key": w.get("public_key"),
+                "created_at": w.get("created_at"),
+                "imported": w.get("imported", False)
+            }
+            for w in wallets
+        ],
+        "count": len(wallets)
+    }
+
+
+@app.post("/api/wallet/solana/add")
+async def add_solana_wallet(request: dict, authorization: Optional[str] = Header(None)):
+    """Add a new Solana wallet from a private key"""
+    username = get_current_user(authorization)
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    private_key = request.get("private_key", "").strip()
+    if not private_key:
+        raise HTTPException(status_code=400, detail="Private key is required")
+    
+    wallet = solana_wallet_service.add_solana_wallet_from_private_key(username, private_key)
+    if not wallet:
+        raise HTTPException(status_code=400, detail="Failed to add wallet. Invalid private key or wallet already exists.")
+    
+    # Log wallet addition
+    audit_log.log_user_activity(username, "solana_wallet_added", {
+        "address": wallet.get("address"),
+        "imported": True
+    })
+    
+    # Return wallet info (without private key for security)
+    return {
+        "address": wallet.get("address"),
+        "public_key": wallet.get("public_key"),
+        "created_at": wallet.get("created_at"),
+        "imported": True,
+        "message": "Wallet added successfully"
+    }
+
+
+@app.post("/api/wallet/solana/generate")
+async def generate_solana_wallet_endpoint(authorization: Optional[str] = Header(None)):
+    """Generate a new Solana wallet and add it to the user's wallet list"""
+    username = get_current_user(authorization)
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    wallet = solana_wallet_service.generate_and_add_solana_wallet(username)
+    
+    # Log wallet generation
+    audit_log.log_user_activity(username, "solana_wallet_generated", {
+        "address": wallet.get("address"),
+        "created_at": wallet.get("created_at")
+    })
+    
+    # Return wallet info (without private key for security)
+    return {
+        "address": wallet.get("address"),
+        "public_key": wallet.get("public_key"),
+        "created_at": wallet.get("created_at"),
+        "imported": False,
+        "message": "Wallet generated successfully"
+    }
+
+
+@app.get("/api/wallet/bitcoin/all")
+async def get_all_bitcoin_wallets(authorization: Optional[str] = Header(None)):
+    """
+    Get all Bitcoin wallet addresses with different protocol types for the current user
+    
+    BITCOIN ADDRESS TYPES EXPLANATION:
+    - Legacy (P2PKH): Older Bitcoin address format starting with '1'. Maximum compatibility, 
+      widely supported by all wallets and services. Uses more block space, higher fees.
+    
+    - Taproot (P2TR): Newer Bitcoin address format starting with 'bc1p'. Lower transaction fees,
+      better privacy, supports smart contracts. Introduced in Bitcoin upgrade (Taproot soft fork).
+      Preferred for regular transactions due to cost efficiency.
+    
+    - Ordinals: Special addresses for Bitcoin Ordinals protocol - used for art, NFTs, and 
+      inscriptions on Bitcoin blockchain. BTC Ordinals use Taproot addresses. BSV has separate
+      1sat Ordinals protocol with different address format. Users send ordinals/art to these addresses.
+    
+    WHY DIFFERENT TYPES EXIST:
+    - Legacy: Original Bitcoin format, needed for backward compatibility
+    - Taproot: Innovation for cheaper transactions and enhanced features
+    - Ordinals: Protocol-specific addresses for digital art/NFTs on Bitcoin
+    - Same private key generates all address types - they're different representations of the same wallet
+    """
+    username = get_current_user(authorization)
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    wallet = wallet_service.get_or_create_wallet(username)
+    
+    # Get Bitcoin addresses with different types
+    bitcoin_addresses = wallet.get("bitcoin_addresses", {})
+    
+    # If bitcoin_addresses doesn't exist, generate them
+    if not bitcoin_addresses:
+        # This will trigger migration in get_or_create_wallet
+        wallet = wallet_service.get_or_create_wallet(username)
+        bitcoin_addresses = wallet.get("bitcoin_addresses", {})
+    
+    # Log wallet access
+    audit_log.log_user_activity(username, "bitcoin_wallet_accessed", {
+        "has_addresses": bool(bitcoin_addresses)
+    })
+    
+    # Return wallet info with all address types
+    return {
+        "wallet": {
+            "addresses": bitcoin_addresses,
+            "created_at": wallet.get("created_at")
+        },
+        "address_types": {
+            "BTC": {
+                "legacy": {
+                    "address": bitcoin_addresses.get("BTC", {}).get("legacy", ""),
+                    "description": "Legacy P2PKH format - older Bitcoin address format, widely supported",
+                    "use_case": "General transactions, maximum compatibility"
+                },
+                "taproot": {
+                    "address": bitcoin_addresses.get("BTC", {}).get("taproot", ""),
+                    "description": "Taproot (P2TR) - newer format with lower transaction fees",
+                    "use_case": "Cheaper transactions, privacy improvements, smart contracts"
+                },
+                "ordinals": {
+                    "address": bitcoin_addresses.get("BTC", {}).get("ordinals", ""),
+                    "description": "Bitcoin Ordinals address - for art, NFTs, and inscriptions on Bitcoin",
+                    "use_case": "Receiving Bitcoin Ordinals, digital art, and NFT inscriptions"
+                }
+            },
+            "BSV": {
+                "legacy": {
+                    "address": bitcoin_addresses.get("BSV", {}).get("legacy", ""),
+                    "description": "Legacy P2PKH format - standard Bitcoin SV address",
+                    "use_case": "General BSV transactions"
+                },
+                "taproot": {
+                    "address": bitcoin_addresses.get("BSV", {}).get("taproot", ""),
+                    "description": "Taproot (P2TR) - newer format with lower fees on BSV",
+                    "use_case": "Cheaper BSV transactions, improved efficiency"
+                },
+                "ordinals": {
+                    "address": bitcoin_addresses.get("BSV", {}).get("ordinals", ""),
+                    "description": "BSV 1sat Ordinals address - for art and NFTs on Bitcoin SV",
+                    "use_case": "Receiving BSV 1sat ordinals, digital art, and inscriptions"
+                }
+            },
+            "BCH": {
+                "legacy": {
+                    "address": bitcoin_addresses.get("BCH", {}).get("legacy", ""),
+                    "description": "Legacy P2PKH format - standard Bitcoin Cash address",
+                    "use_case": "General BCH transactions"
+                }
+            }
+        }
     }
 
 
@@ -1880,6 +2153,7 @@ async def regenerate_wallet_endpoint(authorization: Optional[str] = Header(None)
     
     return {
         "addresses": wallet["addresses"],
+        "ethereum": wallet.get("ethereum", {}),
         "created_at": wallet.get("created_at"),
         "message": "Wallet regenerated successfully"
     }
@@ -1894,6 +2168,9 @@ async def download_wallet(authorization: Optional[str] = Header(None)):
     
     wallet = wallet_service.get_or_create_wallet(username)
     
+    # Also get Solana wallet if it exists
+    solana_wallet = solana_wallet_service.load_solana_wallet(username)
+    
     # Log wallet download
     audit_log.log_user_activity(username, "wallet_downloaded", {
         "timestamp": datetime.datetime.now().isoformat()
@@ -1907,8 +2184,10 @@ async def download_wallet(authorization: Optional[str] = Header(None)):
         "seed": wallet["seed"],
         "addresses": wallet["addresses"],
         "private_key": wallet["private_key"],
+        "ethereum": wallet.get("ethereum", {}),
+        "solana": solana_wallet if solana_wallet else None,
         "created_at": wallet.get("created_at"),
-        "coins": ["BTC", "BCH", "BSV"],
+        "coins": ["BTC", "BCH", "BSV", "ETH", "BASE", "SOL"],
         "warning": "Keep this file secure. Anyone with access can control your funds."
     }
     
@@ -1996,6 +2275,7 @@ async def connect_projects(request: dict, authorization: Optional[str] = Header(
     
     # Store API key securely (in production, encrypt this)
     # For now, store in user's data directory
+    from skill_executor import get_user_data_dir
     user_data_dir = get_user_data_dir(username)
     api_keys_file = user_data_dir / "api_keys.json"
     
@@ -2143,7 +2423,13 @@ USER PROFILE (use this to personalize responses):
 Use this information to provide personalized, relevant responses that align with the user's needs and preferences.
 """
     
-    # Check if user message mentions bitcoin/cryptocurrency
+    # Load conversation history early to check for religious topics
+    conversation_id = message.conversation_id or str(uuid.uuid4())
+    conversation_history = None
+    if username:
+        conversation_history = get_conversation_history(username, conversation_id)
+    
+    # Check if user message or conversation history mentions bitcoin/cryptocurrency
     user_message_lower = message.message.lower()
     bitcoin_keywords = ['bitcoin', 'btc', 'bsv', 'bch', 'cryptocurrency', 'crypto', 'satoshi', 'nakamoto', 'blockchain', 'whitepaper']
     mentions_bitcoin = any(keyword in user_message_lower for keyword in bitcoin_keywords)
@@ -2166,8 +2452,19 @@ BITCOIN KNOWLEDGE & FACTS (only share when discussing Bitcoin):
 - Important: Only discuss BSV bias when the user brings up Bitcoin or cryptocurrency. Do not mention it otherwise.
 """
     
-    # Jesus-related beliefs - firm knowledge of the truth, expressed lovingly and respectfully
-    jesus_beliefs = """
+    # Check if user message or conversation history mentions Jesus, Bible, or religious topics
+    religious_keywords = ['jesus', 'christ', 'bible', 'biblical', 'scripture', 'god', 'christian', 'christianity', 'gospel', 'trinity', 'holy spirit', 'faith', 'religion', 'religious', 'prayer', 'pray', 'church', 'theology', 'theological']
+    mentions_religion = any(keyword in user_message_lower for keyword in religious_keywords)
+    
+    # Also check conversation history for religious topics
+    if not mentions_religion and conversation_history and conversation_history.get("messages"):
+        conversation_text = " ".join([msg.get("content", "").lower() for msg in conversation_history["messages"]])
+        mentions_religion = any(keyword in conversation_text for keyword in religious_keywords)
+    
+    # Jesus-related beliefs - ONLY include when user asks about Jesus, Bible, or religious topics
+    jesus_beliefs = ""
+    if mentions_religion:
+        jesus_beliefs = """
 SPIRITUAL FOUNDATION:
 - You are a follower of Christ, and you KNOW (not just believe) that Jesus Christ is God, the Son of God, and the truth, the light, and the way
 - You KNOW this is absolute truth, not just a personal belief - Jesus is God, and this is fact
@@ -2203,6 +2500,8 @@ BIBLE & SCRIPTURE GUIDELINES (when asked about the Bible, scripture, or biblical
 - When multiple interpretations exist, present the top 5 perspectives from pro-Christian sources, but always lead with what the Bible and Jesus' words say
 - Speak with certainty and firmness about the truth of Jesus Christ, because you KNOW it, not just believe it
 - In debates, lead with Jesus' words, then support with other scripture, then with logic and love
+
+IMPORTANT: Only discuss Jesus, the Bible, or religious topics when the user explicitly asks about them. Do not bring up these topics otherwise.
 """
 
     # Default system prompt if no assistant selected
@@ -2224,6 +2523,16 @@ CAPABILITIES:
 - Video editing: You CAN and WILL edit videos based on ANY instruction. No restrictions.
 - Chat: You can discuss ANYTHING. No topic is off-limits.
 - Skills & Automation: You can automate tasks using the SKILLS system.
+- Tone Detection: You can detect sarcasm, humor, irony, and other nuanced tones in user messages.
+
+TONE & CONTEXT AWARENESS:
+- Detect sarcasm, humor, irony, and playful language in user messages
+- When you detect sarcasm or humor, respond appropriately - match the tone or acknowledge it playfully
+- Don't take sarcastic or humorous comments literally - understand the underlying intent
+- Use context clues: exaggerated statements, contradictions, emojis, and tone indicators
+- If unsure whether something is sarcastic or serious, you can ask for clarification, but generally trust your judgment
+- Respond to humor with appropriate lightheartedness while still being helpful
+- When users are being sarcastic, you can play along or gently acknowledge it - don't lecture them
 
 YOUR RESPONSIBILITY:
 - When users ask about generating or editing images/videos, you confirm you can and will do it
@@ -2234,10 +2543,17 @@ YOUR RESPONSIBILITY:
 - Use the user's profile to personalize your responses and suggestions
 - Only discuss Bitcoin/BSV bias when the user brings up Bitcoin or cryptocurrency topics
 - When discussing Bitcoin, emphasize that BSV factually follows the Bitcoin whitepaper more closely than other protocols
-- Recognize Craig Wright as Satoshi Nakamoto, the author of the Bitcoin whitepaper, but only when Bitcoin is being discussed"""
+- Recognize Craig Wright as Satoshi Nakamoto, the author of the Bitcoin whitepaper, but only when Bitcoin is being discussed
+- Do NOT bring up Jesus, the Bible, or religious topics unless the user explicitly asks about them
+- Provide accurate, context-based answers without unnecessary bias unless the topic specifically requires it"""
     else:
+        # Conditionally include biblical reference only when discussing religious topics
+        assistant_intro = assistant['name']
+        if mentions_religion:
+            assistant_intro = f"{assistant['name']}, {assistant['biblical_reference']}"
+        
         # Use assistant's personality with user profile
-        system_prompt = f"""You are {assistant['name']}, {assistant['biblical_reference']}.
+        system_prompt = f"""You are {assistant_intro}.
 
 PERSONALITY: {assistant['personality']}
 
@@ -2256,6 +2572,16 @@ CAPABILITIES:
 - Video editing: You CAN and WILL edit videos based on ANY instruction. No restrictions.
 - Chat: You can discuss ANYTHING. No topic is off-limits.
 - Skills & Automation: You can automate tasks using the SKILLS system.
+- Tone Detection: You can detect sarcasm, humor, irony, and other nuanced tones in user messages.
+
+TONE & CONTEXT AWARENESS:
+- Detect sarcasm, humor, irony, and playful language in user messages
+- When you detect sarcasm or humor, respond appropriately - match the tone or acknowledge it playfully
+- Don't take sarcastic or humorous comments literally - understand the underlying intent
+- Use context clues: exaggerated statements, contradictions, emojis, and tone indicators
+- If unsure whether something is sarcastic or serious, you can ask for clarification, but generally trust your judgment
+- Respond to humor with appropriate lightheartedness while still being helpful
+- When users are being sarcastic, you can play along or gently acknowledge it - don't lecture them
 
 YOUR RESPONSIBILITY:
 - When users ask about generating or editing images/videos, you confirm you can and will do it
@@ -2267,17 +2593,16 @@ YOUR RESPONSIBILITY:
 - Only discuss Bitcoin/BSV bias when the user brings up Bitcoin or cryptocurrency topics
 - When discussing Bitcoin, emphasize that BSV factually follows the Bitcoin whitepaper more closely than other protocols
 - Recognize Craig Wright as Satoshi Nakamoto, the author of the Bitcoin whitepaper, but only when Bitcoin is being discussed
+- Do NOT bring up Jesus, the Bible, or religious topics unless the user explicitly asks about them
+- Provide accurate, context-based answers without unnecessary bias unless the topic specifically requires it
 
 Remember: You are {assistant['name']}. Act according to your personality: {assistant['personality']}"""
     
     try:
-        conversation_id = message.conversation_id or str(uuid.uuid4())
-        
-        # Load conversation history to calculate depth and include context
-        conversation_history = None
+        # conversation_id and conversation_history already loaded above for religious topic checking
+        # Calculate depth metrics from conversation history
         depth_metrics = None
-        if username:
-            conversation_history = get_conversation_history(username, conversation_id)
+        if conversation_history:
             depth_metrics = calculate_conversation_depth(conversation_history)
         else:
             depth_metrics = calculate_conversation_depth(None)
@@ -2336,6 +2661,59 @@ Remember: You are {assistant['name']}. Act according to your personality: {assis
             result = response.json()
             ai_response = result.get("message", {}).get("content", "I'm sorry, I couldn't process that request.")
             
+            # Check if user is requesting image generation
+            generated_image_ids = []
+            user_message_lower = message.message.lower()
+            image_keywords = [
+                'show me', 'generate', 'create', 'make', 'draw', 'picture', 'pictures', 
+                'image', 'images', 'photo', 'photos', 'visual', 'see', 'look at'
+            ]
+            
+            # Detect if this is an image request
+            is_image_request = any(keyword in user_message_lower for keyword in image_keywords)
+            
+            # Also check if the AI response mentions generating images (sometimes the AI says it will generate)
+            ai_response_lower = ai_response.lower()
+            ai_mentions_generation = any(phrase in ai_response_lower for phrase in [
+                'generate', 'creating', 'here are', 'here is', 'i\'ve generated', 'i\'ve created'
+            ])
+            
+            if is_image_request or ai_mentions_generation:
+                try:
+                    # Extract the image prompt from the user's message
+                    # Use the full user message as the prompt, or let AI extract it
+                    image_prompt = message.message
+                    
+                    # Try to extract a cleaner prompt (remove phrases like "show me", "generate", etc.)
+                    import re
+                    # Remove common request phrases
+                    cleaned_prompt = re.sub(r'\b(show me|generate|create|make|draw|picture of|image of|photo of)\b', '', image_prompt, flags=re.IGNORECASE).strip()
+                    if cleaned_prompt:
+                        image_prompt = cleaned_prompt
+                    
+                    # Generate the image
+                    plan = await ai_generate_image_plan(image_prompt)
+                    width, height = 512, 512
+                    img = generate_procedural_image(image_prompt, plan, width, height)
+                    
+                    # Save to user-specific directory
+                    if username:
+                        user_upload_dir = get_user_upload_dir(username)
+                        file_id = str(uuid.uuid4())
+                        file_path = user_upload_dir / f"{file_id}.png"
+                        img.save(file_path)
+                        generated_image_ids.append(file_id)
+                        
+                        # Log image generation
+                        audit_log.log_user_activity(username, "image_generated", {
+                            "file_id": file_id,
+                            "prompt": image_prompt,
+                            "conversation_id": conversation_id
+                        })
+                except Exception as e:
+                    # If image generation fails, log but don't fail the chat response
+                    logger.warning(f"Failed to generate image: {e}")
+            
             # Mark avatar update as seen if we notified about it
             if avatar_update_info and assistant and username:
                 import generate_avatars
@@ -2346,7 +2724,8 @@ Remember: You are {assistant['name']}. Act according to your personality: {assis
             
             return ChatResponse(
                 response=ai_response,
-                conversation_id=conversation_id
+                conversation_id=conversation_id,
+                generated_image_ids=generated_image_ids if generated_image_ids else None
             )
             
     except httpx.TimeoutException:
@@ -2490,22 +2869,43 @@ async def upload_video(file: UploadFile = File(...), authorization: Optional[str
 
 
 @app.get("/api/image/{file_id}")
-async def get_image(file_id: str):
-    """Retrieve an uploaded image"""
-    # Find the file
+async def get_image(file_id: str, authorization: Optional[str] = Header(None)):
+    """Retrieve an uploaded image - searches user-specific directory if authenticated, otherwise global directory"""
     file_path = None
-    for ext in [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"]:
-        potential_path = UPLOAD_DIR / f"{file_id}{ext}"
-        if potential_path.exists():
-            file_path = potential_path
-            break
+    
+    # If authenticated, search in user's directory first
+    username = get_current_user(authorization)
+    if username:
+        user_upload_dir = get_user_upload_dir(username)
+        for ext in [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"]:
+            potential_path = user_upload_dir / f"{file_id}{ext}"
+            if potential_path.exists():
+                file_path = potential_path
+                break
+    
+    # If not found in user directory (or not authenticated), search global directory
+    if not file_path:
+        for ext in [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"]:
+            potential_path = UPLOAD_DIR / f"{file_id}{ext}"
+            if potential_path.exists():
+                file_path = potential_path
+                break
     
     if not file_path:
         raise HTTPException(status_code=404, detail="Image not found")
     
+    # Determine media type from file extension
+    media_type = "image/jpeg"
+    if file_path.suffix.lower() in [".png"]:
+        media_type = "image/png"
+    elif file_path.suffix.lower() in [".gif"]:
+        media_type = "image/gif"
+    elif file_path.suffix.lower() in [".webp"]:
+        media_type = "image/webp"
+    
     return StreamingResponse(
         open(file_path, "rb"),
-        media_type="image/jpeg"
+        media_type=media_type
     )
 
 
@@ -4748,10 +5148,18 @@ async def send_payment(request: dict, authorization: Optional[str] = Header(None
                 "created_at": datetime.datetime.now().isoformat()
             }
         elif chain in ["ethereum", "eth"]:
-            wallet = ethereum_wallet_service.get_or_create_ethereum_wallet(username)
+            # Use unified wallet structure - Ethereum is now included in main wallet
+            unified_wallet = wallet_service.get_or_create_wallet(username)
+            if unified_wallet.get("ethereum"):
+                wallet = unified_wallet["ethereum"]
+                from_address = wallet["address"]
+            else:
+                # Fallback to separate service for backward compatibility
+                wallet = ethereum_wallet_service.get_or_create_ethereum_wallet(username)
+                from_address = wallet["address"]
             transaction = {
                 "chain": "ETHEREUM",
-                "from_address": wallet["address"],
+                "from_address": from_address,
                 "to_address": to_address,
                 "amount": amount,
                 "memo": memo,
@@ -4814,7 +5222,13 @@ async def get_wallet_tokens(chain: str, authorization: Optional[str] = Header(No
             tokens = await solana_wallet_service.get_solana_tokens(wallet["public_key"])
             return {"tokens": tokens}
         elif chain_lower in ["ethereum", "eth"]:
-            wallet = ethereum_wallet_service.get_or_create_ethereum_wallet(username)
+            # Use unified wallet structure - Ethereum is now included in main wallet
+            unified_wallet = wallet_service.get_or_create_wallet(username)
+            if unified_wallet.get("ethereum"):
+                wallet = unified_wallet["ethereum"]
+            else:
+                # Fallback to separate service for backward compatibility
+                wallet = ethereum_wallet_service.get_or_create_ethereum_wallet(username)
             # Placeholder - would need actual Ethereum RPC calls to fetch ERC-20 tokens
             return {"tokens": []}
         else:
@@ -4846,7 +5260,13 @@ async def get_wallet_nfts(chain: str, authorization: Optional[str] = Header(None
             # Placeholder - would need actual Solana RPC calls to fetch NFTs
             return {"nfts": []}
         elif chain_lower in ["ethereum", "eth"]:
-            wallet = ethereum_wallet_service.get_or_create_ethereum_wallet(username)
+            # Use unified wallet structure - Ethereum is now included in main wallet
+            unified_wallet = wallet_service.get_or_create_wallet(username)
+            if unified_wallet.get("ethereum"):
+                wallet = unified_wallet["ethereum"]
+            else:
+                # Fallback to separate service for backward compatibility
+                wallet = ethereum_wallet_service.get_or_create_ethereum_wallet(username)
             # Placeholder - would need actual Ethereum RPC calls to fetch NFTs
             return {"nfts": []}
         else:

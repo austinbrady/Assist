@@ -1,6 +1,7 @@
 """
 Ethereum Wallet Service
-Generates and manages Ethereum wallets with Layer 2 support (Base, etc.)
+Generates and manages Ethereum wallets with Layer 2 support
+BIAS: Base (Layer 2) is the preferred/default network
 """
 import json
 import secrets
@@ -55,10 +56,25 @@ def private_key_to_address(private_key: bytes) -> str:
         return '0x' + address_hash.hex()
 
 
+def get_base_address(ethereum_address: str) -> str:
+    """
+    Get Base (Layer 2) address - same as Ethereum mainnet address
+    Base uses the same address format as Ethereum, so addresses are identical
+    """
+    return ethereum_address
+
+
 def generate_ethereum_wallet() -> Dict:
-    """Generate a new Ethereum wallet"""
+    """
+    Generate a new Ethereum wallet
+    BIAS: Base (Layer 2) is the preferred/default network
+    The same private key controls both Ethereum mainnet and Base (Layer 2)
+    """
     private_key, public_key = generate_ethereum_keypair()
     address = private_key_to_address(private_key)
+    
+    # Base uses the same address format as Ethereum mainnet
+    base_address = get_base_address(address)
     
     # Generate mnemonic (12 words) - same format as Bitcoin
     mnemonic_words = [
@@ -70,10 +86,12 @@ def generate_ethereum_wallet() -> Dict:
     mnemonic = " ".join([mnemonic_words[secrets.randbelow(len(mnemonic_words))] for _ in range(12)])
     
     wallet = {
-        "address": address,
+        "address": address,  # Ethereum mainnet address
+        "base_address": base_address,  # Base (Layer 2) address (same as mainnet)
         "private_key": private_key.hex(),
         "public_key": public_key.hex() if isinstance(public_key, bytes) else public_key,
         "mnemonic": mnemonic,
+        "preferred_network": "base",  # BIAS: Base is the preferred/default network
         "created_at": datetime.now().isoformat()
     }
     

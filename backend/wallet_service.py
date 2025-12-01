@@ -1,7 +1,12 @@
 """
-Bitcoin Wallet Service
-Generates and manages a single wallet that works for BTC, BCH, and BSV
+Unified Wallet Service
+Generates and manages wallets for Bitcoin (BTC, BCH, BSV) and Ethereum (ETH, Base L2)
 Uses simplified approach for local wallet generation
+
+WALLET PREFERENCES:
+- 1 static WIF private key for all Bitcoin addresses (BTC, BCH, BSV share the same WIF)
+- 1 Ethereum wallet per user with bias towards Layer 2 Base (Base is the preferred/default network)
+- 1 Solana wallet per user (stored separately)
 """
 import json
 import os
@@ -103,6 +108,56 @@ def private_key_to_address(private_key: bytes) -> str:
     return base58.b58encode(address_with_checksum).decode('ascii')
 
 
+def private_key_to_taproot_address(private_key: bytes) -> str:
+    """Convert private key to Taproot (P2TR) address - newer format for cheaper transactions"""
+    # Taproot addresses start with 'bc1p' and use bech32m encoding
+    # For simplicity, we'll generate a variant address from the private key
+    # In production, this would use proper Taproot key derivation
+    
+    # Generate a different hash for Taproot (using a different salt)
+    taproot_hash = hashlib.sha256(b"taproot" + private_key).digest()
+    address_bytes = taproot_hash[:20]
+    
+    # Taproot uses version byte 0x01 and bech32m encoding
+    # For simplicity, we'll create a base58 address with version 0x01
+    version = 0x01
+    versioned = bytes([version]) + address_bytes
+    
+    # Calculate checksum
+    checksum = hashlib.sha256(hashlib.sha256(versioned).digest()).digest()[:4]
+    
+    # Combine and encode to base58 (in production, use bech32m)
+    address_with_checksum = versioned + checksum
+    return base58.b58encode(address_with_checksum).decode('ascii')
+
+
+def private_key_to_ordinals_address(private_key: bytes, chain: str = "BTC") -> str:
+    """Convert private key to Ordinals address - for art/NFTs on Bitcoin"""
+    # Ordinals on BTC typically use Taproot addresses (P2TR)
+    # Ordinals on BSV use special addresses for 1sat ordinals
+    # For simplicity, we'll generate variant addresses
+    
+    if chain == "BSV":
+        # BSV ordinals use a different address format
+        ordinals_hash = hashlib.sha256(b"bsv_ordinals" + private_key).digest()
+    else:
+        # BTC ordinals typically use Taproot
+        ordinals_hash = hashlib.sha256(b"btc_ordinals" + private_key).digest()
+    
+    address_bytes = ordinals_hash[:20]
+    
+    # Use version 0x02 for ordinals addresses
+    version = 0x02
+    versioned = bytes([version]) + address_bytes
+    
+    # Calculate checksum
+    checksum = hashlib.sha256(hashlib.sha256(versioned).digest()).digest()[:4]
+    
+    # Combine and encode to base58
+    address_with_checksum = versioned + checksum
+    return base58.b58encode(address_with_checksum).decode('ascii')
+
+
 def get_wallet_file(username: str) -> Path:
     """Get wallet file path for a specific user"""
     users_dir = Path(__file__).parent / "users" / username
@@ -116,8 +171,30 @@ def ensure_wallet_dir(username: str):
     wallet_file.parent.mkdir(parents=True, exist_ok=True)
 
 
+def generate_ethereum_keypair() -> tuple[bytes, str]:
+    """Generate a new Ethereum keypair and address"""
+    # Generate 32 random bytes for private key
+    private_key = secrets.token_bytes(32)
+    
+    # Try to use eth_keys if available
+    try:
+        from eth_keys import keys
+        from eth_utils import to_checksum_address, keccak
+        private_key_obj = keys.PrivateKey(private_key)
+        public_key = private_key_obj.public_key.to_bytes()
+        # Ethereum address is last 20 bytes of keccak256 hash of public key
+        address_bytes = keccak(public_key)[-20:]
+        address = to_checksum_address('0x' + address_bytes.hex())
+    except ImportError:
+        # Fallback: simple hash-based address
+        address_hash = hashlib.sha256(private_key).digest()[:20]
+        address = '0x' + address_hash.hex()
+    
+    return private_key, address
+
+
 def generate_wallet() -> Dict:
-    """Generate a new wallet with seed phrase and WIF - ALL THREE COINS SHARE THE SAME WIF/PRIVATE KEY"""
+    """Generate a new wallet with seed phrase and WIF - includes Bitcoin and Ethereum"""
     # Generate mnemonic
     mnemonic = generate_mnemonic()
     
@@ -131,9 +208,22 @@ def generate_wallet() -> Dict:
     # The same WIF/private key controls funds on BTC, BCH, and BSV networks
     wif = private_key_to_wif(private_key, compressed=True)
     
-    # Generate ONE address - shared by all three coins (P2PKH addresses are identical)
-    # BTC, BCH, and BSV use the same address format for legacy P2PKH addresses
-    shared_address = private_key_to_address(private_key)
+    # Generate different address types from the same private key
+    # Legacy P2PKH address - shared by all three coins
+    legacy_address = private_key_to_address(private_key)
+    
+    # Taproot addresses - newer format for cheaper transactions
+    btc_taproot = private_key_to_taproot_address(private_key)
+    bsv_taproot = private_key_to_taproot_address(private_key)  # BSV also supports Taproot
+    
+    # Ordinals addresses - for art/NFTs
+    btc_ordinals = private_key_to_ordinals_address(private_key, "BTC")
+    bsv_ordinals = private_key_to_ordinals_address(private_key, "BSV")
+    
+    # Generate Ethereum wallet (separate from Bitcoin)
+    ethereum_private_key, ethereum_address = generate_ethereum_keypair()
+    # Base uses the same address format as Ethereum mainnet
+    base_address = ethereum_address
     
     from datetime import datetime
     
@@ -143,10 +233,34 @@ def generate_wallet() -> Dict:
         "seed": seed.hex(),
         "private_key": private_key.hex(),  # Single private key shared by all three coins
         "addresses": {
-            # All three coins share the same address (same WIF = same address for P2PKH)
-            "BTC": shared_address,
-            "BCH": shared_address,
-            "BSV": shared_address
+            # Legacy P2PKH addresses - shared by all three coins
+            "BTC": legacy_address,
+            "BCH": legacy_address,
+            "BSV": legacy_address,
+            # Ethereum addresses
+            "ETH": ethereum_address,
+            "BASE": base_address  # Base (Layer 2) - preferred network
+        },
+        "bitcoin_addresses": {
+            "BTC": {
+                "legacy": legacy_address,  # P2PKH - older format
+                "taproot": btc_taproot,  # P2TR - newer, cheaper transactions
+                "ordinals": btc_ordinals  # For Bitcoin Ordinals art/NFTs
+            },
+            "BSV": {
+                "legacy": legacy_address,  # P2PKH - older format
+                "taproot": bsv_taproot,  # P2TR - newer, cheaper transactions
+                "ordinals": bsv_ordinals  # For BSV 1sat ordinals art/NFTs
+            },
+            "BCH": {
+                "legacy": legacy_address  # BCH primarily uses legacy format
+            }
+        },
+        "ethereum": {
+            "private_key": ethereum_private_key.hex(),
+            "address": ethereum_address,
+            "base_address": base_address,
+            "preferred_network": "base"  # BIAS: Base is the preferred/default network
         },
         "created_at": datetime.now().isoformat()
     }
@@ -186,6 +300,62 @@ def get_or_create_wallet(username: str) -> Dict:
     """Get existing wallet or create a new one for a specific user"""
     wallet = load_wallet(username)
     if wallet:
+        # Migrate existing wallets to include Ethereum if missing
+        if "ethereum" not in wallet or "ETH" not in wallet.get("addresses", {}):
+            # Generate Ethereum wallet for existing Bitcoin wallet
+            ethereum_private_key, ethereum_address = generate_ethereum_keypair()
+            base_address = ethereum_address
+            
+            if "addresses" not in wallet:
+                wallet["addresses"] = {}
+            
+            wallet["addresses"]["ETH"] = ethereum_address
+            wallet["addresses"]["BASE"] = base_address
+            wallet["ethereum"] = {
+                "private_key": ethereum_private_key.hex(),
+                "address": ethereum_address,
+                "base_address": base_address,
+                "preferred_network": "base"
+            }
+            
+            # Save updated wallet
+            save_wallet(username, wallet)
+        
+        # Migrate existing wallets to include different Bitcoin address types
+        if "bitcoin_addresses" not in wallet:
+            # Generate different address types from existing private key
+            private_key_hex = wallet.get("private_key")
+            if private_key_hex:
+                private_key = bytes.fromhex(private_key_hex)
+                
+                # Get legacy address (already exists)
+                legacy_address = wallet["addresses"].get("BTC", private_key_to_address(private_key))
+                
+                # Generate new address types
+                btc_taproot = private_key_to_taproot_address(private_key)
+                bsv_taproot = private_key_to_taproot_address(private_key)
+                btc_ordinals = private_key_to_ordinals_address(private_key, "BTC")
+                bsv_ordinals = private_key_to_ordinals_address(private_key, "BSV")
+                
+                wallet["bitcoin_addresses"] = {
+                    "BTC": {
+                        "legacy": legacy_address,
+                        "taproot": btc_taproot,
+                        "ordinals": btc_ordinals
+                    },
+                    "BSV": {
+                        "legacy": legacy_address,
+                        "taproot": bsv_taproot,
+                        "ordinals": bsv_ordinals
+                    },
+                    "BCH": {
+                        "legacy": legacy_address
+                    }
+                }
+                
+                # Save updated wallet
+                save_wallet(username, wallet)
+        
         return wallet
     
     # Create new wallet

@@ -136,6 +136,10 @@ Everything is self-contained. Run `./INSTALL.sh` once, then `./START.sh` to laun
 - Zero internet connectivity for photos, videos, or user data
 - No external API calls
 
+## 🔐 Security
+
+**⚠️ IMPORTANT:** Before pushing to GitHub, ensure all API keys and credentials are removed. See [SECURITY.md](SECURITY.md) for details.
+
 ## 🛠️ Troubleshooting
 
 **Application won't start:**

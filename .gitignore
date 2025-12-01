@@ -14,6 +14,8 @@ backend/songs/*
 !backend/songs/.gitkeep
 backend/users/*
 !backend/users/.gitkeep
+backend/users_data/*
+!backend/users_data/.gitkeep
 
 # Node
 frontend/node_modules/
@@ -37,3 +39,20 @@ Thumbs.db
 # Environment
 .env
 .env.local
+.env.*.local
+
+# API Keys and Credentials - NEVER COMMIT THESE TO GITHUB
+*CREDENTIALS*.txt
+*credentials*.txt
+*API_KEY*.txt
+*api_key*.txt
+backend/users/*/api_keys.json
+backend/users_data/*/api_keys.json
+
+# iOS Xcode environment files (user-specific)
+mobile/ios/.xcode.env.local
+*.xcode.env.local
+
+# Mobile app credentials
+mobile/ios/Pods/
+mobile/ios/build/

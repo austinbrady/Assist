@@ -262,31 +262,56 @@ def create_user(username: str, password: str) -> Tuple[Optional[Dict], Optional[
     return user, None
 
 
+def find_username_case_insensitive(username: str) -> Optional[str]:
+    """Find the actual username (with correct case) from a case-insensitive search"""
+    users = load_users()
+    username_normalized = username.strip().lower()
+    
+    # First try exact match
+    if username.strip() in users:
+        return username.strip()
+    
+    # Then try case-insensitive match
+    for existing_username in users.keys():
+        if existing_username.lower() == username_normalized:
+            return existing_username
+    
+    return None
+
+
 def authenticate_user(username: str, password: str) -> Optional[Dict]:
-    """Authenticate a user"""
+    """Authenticate a user (case-insensitive username matching)"""
     users = load_users()
     
-    if username not in users:
+    # Find the actual username with correct case
+    actual_username = find_username_case_insensitive(username)
+    if not actual_username:
         return None
     
-    user = users[username]
+    user = users[actual_username]
     if not verify_password(password, user["password_hash"]):
         return None
     
-    # Return user without password hash
+    # Return user without password hash, with correct username case
     user_copy = user.copy()
     user_copy.pop("password_hash", None)
+    user_copy["username"] = actual_username  # Ensure correct case is returned
     return user_copy
 
 
 def get_user(username: str) -> Optional[Dict]:
-    """Get user by username"""
+    """Get user by username (case-insensitive)"""
     users = load_users()
-    if username in users:
-        user = users[username].copy()
-        user.pop("password_hash", None)
-        return user
-    return None
+    
+    # Find the actual username with correct case
+    actual_username = find_username_case_insensitive(username)
+    if not actual_username:
+        return None
+    
+    user = users[actual_username].copy()
+    user.pop("password_hash", None)
+    user["username"] = actual_username  # Ensure correct case is returned
+    return user
 
 
 def update_user_assistant(username: str, assistant_id: str):
@@ -516,6 +541,14 @@ AI_SKILLS = [
         "icon": "🍽️",
         "category": "lifestyle",
         "priority": 6
+    },
+    {
+        "id": "business_manager",
+        "name": "Business Manager",
+        "description": "Complete business dashboard with expenses, income, profit tracking, hours, and customers",
+        "icon": "🏢",
+        "category": "business",
+        "priority": 7
     }
 ]
 

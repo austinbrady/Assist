@@ -1,8 +1,11 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { Send, Image as ImageIcon, Video, Loader2, Upload, X, Sparkles, Wand2, Film, History, Menu, ChevronDown, ChevronUp, Trash2, Music, Settings, Zap, User, Bitcoin, Download, RefreshCw, Folder, FolderOpen, Code, FilePlus, FileText, Clock, Bell, Play, Pause, Copy } from 'lucide-react'
 import axios from 'axios'
+
+// Configure axios with longer timeout for slower connections
+axios.defaults.timeout = 30000 // 30 seconds
 
 // Suppress browser extension errors in console (they don't affect app functionality)
 if (typeof window !== 'undefined') {
@@ -22,9 +25,11 @@ if (typeof window !== 'undefined') {
       message.includes('origins don\'t match') ||
       message.includes('Failed to fetch dynamically imported module: chrome-extension://') ||
       message.includes('__nextjs_original-stack-frame') ||
-      message.includes('web_accessible_resources')
+      message.includes('web_accessible_resources') ||
+      message.includes('cannot be a descendant of') ||
+      message.includes('hydration error')
     ) {
-      // Silently ignore extension-related errors
+      // Silently ignore extension-related errors and hydration warnings
       return
     }
     // Log other errors normally
@@ -38,7 +43,9 @@ if (typeof window !== 'undefined') {
     if (
       message.includes('chrome-extension://') ||
       message.includes('Sensilet') ||
-      message.includes('React DevTools')
+      message.includes('React DevTools') ||
+      message.includes('cannot be a descendant of') ||
+      message.includes('hydration')
     ) {
       return
     }
@@ -100,6 +107,7 @@ interface Message {
   content: string
   timestamp: Date
   audioUrl?: string
+  generatedImageIds?: string[]
 }
 
 interface UploadedFile {
@@ -161,7 +169,7 @@ interface Skill {
   category: string
 }
 
-export default function Home() {
+export default function Home(): React.ReactElement {
   const { isMobile, deviceType } = useDeviceDetection()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -245,8 +253,7 @@ export default function Home() {
   const [skillIssueQuery, setSkillIssueQuery] = useState('')
   const [findingSkill, setFindingSkill] = useState(false)
   const [skillSuggestion, setSkillSuggestion] = useState<{ skill: Skill | null; message: string } | null>(null)
-  const [showSkillTaskModal, setShowSkillTaskModal] = useState(false)
-  const [skillTaskModalSkill, setSkillTaskModalSkill] = useState<Skill | null>(null)
+  const [currentSkillView, setCurrentSkillView] = useState<Skill | null>(null)
   const [avatarTalking, setAvatarTalking] = useState(false)
   const [avatarMessage, setAvatarMessage] = useState<string>('')
   const [showAvatar, setShowAvatar] = useState(true)
@@ -286,6 +293,19 @@ export default function Home() {
   const [newMealPlanName, setNewMealPlanName] = useState('')
   const [newMealPlanDate, setNewMealPlanDate] = useState('')
   const [newMealPlanMeals, setNewMealPlanMeals] = useState('')
+  const [businessData, setBusinessData] = useState<any>(null)
+  const [loadingBusiness, setLoadingBusiness] = useState(false)
+  const [newBusinessExpenseAmount, setNewBusinessExpenseAmount] = useState('')
+  const [newBusinessExpenseCategory, setNewBusinessExpenseCategory] = useState('')
+  const [newBusinessExpenseDescription, setNewBusinessExpenseDescription] = useState('')
+  const [newBusinessIncomeAmount, setNewBusinessIncomeAmount] = useState('')
+  const [newBusinessIncomeSource, setNewBusinessIncomeSource] = useState('')
+  const [newBusinessIncomeDescription, setNewBusinessIncomeDescription] = useState('')
+  const [newCustomerName, setNewCustomerName] = useState('')
+  const [newCustomerEmail, setNewCustomerEmail] = useState('')
+  const [newCustomerPhone, setNewCustomerPhone] = useState('')
+  const [newCustomerAddress, setNewCustomerAddress] = useState('')
+  const [newCustomerNotes, setNewCustomerNotes] = useState('')
   const [wallet, setWallet] = useState<any>(null)
   const [solanaWallet, setSolanaWallet] = useState<any>(null)
   const [loadingWallet, setLoadingWallet] = useState(false)
@@ -353,11 +373,17 @@ export default function Home() {
 
   useEffect(() => {
     const token = localStorage.getItem('auth_token')
+    const storedUsername = localStorage.getItem('username')
+    
     if (token) {
       setAuthToken(token)
       checkAuthStatus(token)
     } else {
       setShowLogin(true)
+      // Restore username if available (for convenience)
+      if (storedUsername) {
+        setLoginUsername(storedUsername)
+      }
     }
   }, [])
 
@@ -734,6 +760,12 @@ export default function Home() {
       const response = await axios.get(`${API_BASE_URL}/api/auth/me`, {
         headers: { Authorization: `Bearer ${token}` }
       })
+      
+      // Update stored username if it changed (case correction)
+      if (response.data.username) {
+        localStorage.setItem('username', response.data.username)
+      }
+      
       setCurrentUser(response.data)
       setIsAuthenticated(true)
       setShowLogin(false)
@@ -749,7 +781,9 @@ export default function Home() {
       // Onboarding is handled in handleSignup() after successful account creation
       // This ensures each user's Personal AI is private and personalized only for them
     } catch (error) {
+      // Token is invalid or expired, clear all auth data
       localStorage.removeItem('auth_token')
+      localStorage.removeItem('username')
       setAuthToken(null)
       setIsAuthenticated(false)
       setShowLogin(true)
@@ -1130,6 +1164,40 @@ export default function Home() {
     }
   }
 
+  const loadBusiness = async () => {
+    if (!authToken) return
+    setLoadingBusiness(true)
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/skills/business_manager/data`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      })
+      setBusinessData(response.data.data || null)
+      
+      // Also load dashboard summary
+      const dashboardResponse = await axios.post(
+        `${API_BASE_URL}/api/skills/execute`,
+        {
+          skill_id: 'business_manager',
+          task: 'dashboard',
+          parameters: {}
+        },
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      )
+      // Update business data with dashboard summary
+      if (dashboardResponse.data) {
+        setBusinessData((prev: any) => ({
+          ...prev,
+          ...dashboardResponse.data
+        }))
+      }
+    } catch (error) {
+      console.error('Failed to load business data:', error)
+      setBusinessData(null)
+    } finally {
+      setLoadingBusiness(false)
+    }
+  }
+
   const addExpense = async () => {
     if (!authToken || !newExpenseAmount.trim() || !newExpenseCategory.trim()) return
     
@@ -1164,6 +1232,29 @@ export default function Home() {
     }
   }
 
+  const deleteExpense = async (expenseId: string) => {
+    if (!authToken) return
+    
+    if (!confirm('Are you sure you want to delete this expense?')) return
+    
+    try {
+      await axios.post(
+        `${API_BASE_URL}/api/skills/execute`,
+        {
+          skill_id: 'expense_calculator',
+          task: `delete expense`,
+          parameters: {
+            expense_id: expenseId
+          }
+        },
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      )
+      await loadExpenses()
+    } catch (error: any) {
+      alert(`Failed to delete expense: ${error.response?.data?.detail || error.message}`)
+    }
+  }
+
   const calculateTotal = () => {
     return expenses.reduce((sum: number, e: any) => sum + (e.amount || 0), 0)
   }
@@ -1175,6 +1266,148 @@ export default function Home() {
       categoryTotals[cat] = (categoryTotals[cat] || 0) + (e.amount || 0)
     })
     return categoryTotals
+  }
+
+  const addBusinessExpense = async () => {
+    if (!authToken || !newBusinessExpenseAmount.trim() || !newBusinessExpenseCategory.trim()) return
+    
+    try {
+      await axios.post(
+        `${API_BASE_URL}/api/skills/execute`,
+        {
+          skill_id: 'business_manager',
+          task: 'add expense',
+          parameters: {
+            amount: parseFloat(newBusinessExpenseAmount),
+            category: newBusinessExpenseCategory,
+            description: newBusinessExpenseDescription
+          }
+        },
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      )
+      setNewBusinessExpenseAmount('')
+      setNewBusinessExpenseCategory('')
+      setNewBusinessExpenseDescription('')
+      await loadBusiness()
+    } catch (error: any) {
+      alert(`Failed to add expense: ${error.response?.data?.detail || error.message}`)
+    }
+  }
+
+  const addBusinessIncome = async () => {
+    if (!authToken || !newBusinessIncomeAmount.trim() || !newBusinessIncomeSource.trim()) return
+    
+    try {
+      await axios.post(
+        `${API_BASE_URL}/api/skills/execute`,
+        {
+          skill_id: 'business_manager',
+          task: 'add income',
+          parameters: {
+            amount: parseFloat(newBusinessIncomeAmount),
+            source: newBusinessIncomeSource,
+            description: newBusinessIncomeDescription
+          }
+        },
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      )
+      setNewBusinessIncomeAmount('')
+      setNewBusinessIncomeSource('')
+      setNewBusinessIncomeDescription('')
+      await loadBusiness()
+    } catch (error: any) {
+      alert(`Failed to add income: ${error.response?.data?.detail || error.message}`)
+    }
+  }
+
+  const addBusinessCustomer = async () => {
+    if (!authToken || !newCustomerName.trim()) return
+    
+    try {
+      await axios.post(
+        `${API_BASE_URL}/api/skills/execute`,
+        {
+          skill_id: 'business_manager',
+          task: 'add customer',
+          parameters: {
+            name: newCustomerName,
+            email: newCustomerEmail,
+            phone: newCustomerPhone,
+            address: newCustomerAddress,
+            notes: newCustomerNotes
+          }
+        },
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      )
+      setNewCustomerName('')
+      setNewCustomerEmail('')
+      setNewCustomerPhone('')
+      setNewCustomerAddress('')
+      setNewCustomerNotes('')
+      await loadBusiness()
+    } catch (error: any) {
+      alert(`Failed to add customer: ${error.response?.data?.detail || error.message}`)
+    }
+  }
+
+  const deleteBusinessExpense = async (expenseId: string) => {
+    if (!authToken) return
+    if (!confirm('Are you sure you want to delete this expense?')) return
+    
+    try {
+      await axios.post(
+        `${API_BASE_URL}/api/skills/execute`,
+        {
+          skill_id: 'business_manager',
+          task: 'delete expense',
+          parameters: { expense_id: expenseId }
+        },
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      )
+      await loadBusiness()
+    } catch (error: any) {
+      alert(`Failed to delete expense: ${error.response?.data?.detail || error.message}`)
+    }
+  }
+
+  const deleteBusinessIncome = async (incomeId: string) => {
+    if (!authToken) return
+    if (!confirm('Are you sure you want to delete this income?')) return
+    
+    try {
+      await axios.post(
+        `${API_BASE_URL}/api/skills/execute`,
+        {
+          skill_id: 'business_manager',
+          task: 'delete income',
+          parameters: { income_id: incomeId }
+        },
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      )
+      await loadBusiness()
+    } catch (error: any) {
+      alert(`Failed to delete income: ${error.response?.data?.detail || error.message}`)
+    }
+  }
+
+  const deleteBusinessCustomer = async (customerId: string) => {
+    if (!authToken) return
+    if (!confirm('Are you sure you want to delete this customer?')) return
+    
+    try {
+      await axios.post(
+        `${API_BASE_URL}/api/skills/execute`,
+        {
+          skill_id: 'business_manager',
+          task: 'delete customer',
+          parameters: { customer_id: customerId }
+        },
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      )
+      await loadBusiness()
+    } catch (error: any) {
+      alert(`Failed to delete customer: ${error.response?.data?.detail || error.message}`)
+    }
   }
 
   const loadBills = async () => {
@@ -1381,7 +1614,11 @@ export default function Home() {
         username: loginUsername.trim(),
         password: loginPassword
       })
+      
+      // Store authentication data in localStorage for persistence
       localStorage.setItem('auth_token', response.data.token)
+      localStorage.setItem('username', response.data.username) // Store username for next login
+      
       setAuthToken(response.data.token)
       setCurrentUser(response.data)
       setIsAuthenticated(true)
@@ -1394,15 +1631,26 @@ export default function Home() {
         document.title = `${capitalizeUsername(response.data.username)}'s Personal AI`
       }
       
-      // Clear login form
-      setLoginUsername('')
+      // Clear password (keep username for convenience)
       setLoginPassword('')
       
       // Signin users should NEVER see onboarding - they already have accounts
       // Only signup should trigger onboarding
       await loadSkills()
     } catch (error: any) {
-      alert(`Login failed: ${error.response?.data?.detail || error.message}`)
+      const errorMessage = error.response?.data?.detail || error.message || 'Login failed'
+      
+      // Provide more helpful error messages
+      if (errorMessage.includes('Invalid username or password')) {
+        alert('Login failed: Invalid username or password. Please check your credentials and try again.')
+      } else if (errorMessage.includes('username')) {
+        alert(`Login failed: ${errorMessage}`)
+      } else {
+        alert(`Login failed: ${errorMessage}. Please try again.`)
+      }
+      
+      // Clear password on error for security
+      setLoginPassword('')
     }
   }
 
@@ -1554,6 +1802,7 @@ export default function Home() {
   // Sign out handler
   const handleSignOut = () => {
     localStorage.removeItem('auth_token')
+    localStorage.removeItem('username')
     setAuthToken(null)
     setIsAuthenticated(false)
     setCurrentUser(null)
@@ -1643,9 +1892,10 @@ export default function Home() {
     }, duration)
   }
 
-  const openSkillTaskModal = (skill: Skill) => {
-    setSkillTaskModalSkill(skill)
-    setShowSkillTaskModal(true)
+  const openSkillPage = (skill: Skill) => {
+    setCurrentSkillView(skill)
+    setActiveView(`skill_${skill.id}`)
+    setSkillTask('')
     speakAsAvatar(`Hey! I see you want to use ${skill.name}. What would you like me to help you with?`, 4000)
   }
 
@@ -1744,9 +1994,25 @@ export default function Home() {
       
       if (response.data.documents && response.data.documents.length > 0) {
         const lastDoc = response.data.documents[0]
-        // Open the document - for now, just show a message
-        alert(`Opening last document: ${lastDoc.document_id}`)
-        // TODO: Implement document opening logic
+        // Open the document folder
+        try {
+          await axios.post(
+            `${API_BASE_URL}/api/files/open-folder`,
+            { skill_id: skillId },
+            { headers: { Authorization: `Bearer ${authToken}` } }
+          )
+          // Show document info
+          const message: Message = {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: `📄 **Opened Last Document**\n\nDocument ID: ${lastDoc.document_id}\nCreated: ${lastDoc.created_at ? new Date(lastDoc.created_at).toLocaleString() : 'Unknown'}\n\nThe folder containing this document has been opened.`,
+            timestamp: new Date(),
+          }
+          setMessages((prev) => [...prev, message])
+          setActiveView('chat')
+        } catch (error: any) {
+          alert(`Failed to open document folder: ${error.response?.data?.detail || error.message}`)
+        }
       } else {
         alert('No recent documents found for this skill')
       }
@@ -1767,6 +2033,7 @@ export default function Home() {
       
       setAllConversations(sorted)
       setDisplayedConversations(sorted.slice(0, conversationsDisplayLimit))
+      setConversations(sorted)
       
       // Auto-load last conversation if no messages are currently loaded
       if (messages.length === 0 && sorted.length > 0 && !conversationId) {
@@ -1830,8 +2097,11 @@ export default function Home() {
   }
 
   const loadConversation = async (convId: string) => {
+    if (!authToken) return
     try {
-      const response = await axios.get(`${API_BASE_URL}/api/conversations/${convId}`)
+      const response = await axios.get(`${API_BASE_URL}/api/conversations/${convId}`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      })
       const conv = response.data
       
       // Convert conversation messages to Message format
@@ -1845,7 +2115,17 @@ export default function Home() {
       setMessages(loadedMessages)
       setConversationId(convId)
       setShowHistory(false)
-    } catch (error) {
+    } catch (error: any) {
+      // Handle 401 - authentication expired
+      if (error.response?.status === 401) {
+        console.error('Authentication expired. Please log in again.')
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('username')
+        setAuthToken(null)
+        setIsAuthenticated(false)
+        setShowLogin(true)
+        return
+      }
       console.error('Failed to load conversation:', error)
     }
   }
@@ -1885,8 +2165,11 @@ export default function Home() {
   }
 
   const deleteConversation = async (convId: string) => {
+    if (!authToken) return
     try {
-      await axios.delete(`${API_BASE_URL}/api/conversations/${convId}`)
+      await axios.delete(`${API_BASE_URL}/api/conversations/${convId}`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      })
       setAllConversations((prev) => prev.filter((c) => c.conversation_id !== convId))
       setDisplayedConversations((prev) => prev.filter((c) => c.conversation_id !== convId))
       if (conversationId === convId) {
@@ -1900,8 +2183,11 @@ export default function Home() {
   }
 
   const deleteImage = async (fileId: string) => {
+    if (!authToken) return
     try {
-      await axios.delete(`${API_BASE_URL}/api/image/${fileId}`)
+      await axios.delete(`${API_BASE_URL}/api/image/${fileId}`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      })
       setImageHistory((prev) => prev.filter((img) => img.file_id !== fileId))
       setUploadedFiles((prev) => prev.filter((f) => f.id !== fileId))
       if (selectedFile?.id === fileId) {
@@ -1915,8 +2201,11 @@ export default function Home() {
   }
 
   const deleteVideo = async (fileId: string) => {
+    if (!authToken) return
     try {
-      await axios.delete(`${API_BASE_URL}/api/video/${fileId}`)
+      await axios.delete(`${API_BASE_URL}/api/video/${fileId}`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      })
       setVideoHistory((prev) => prev.filter((vid) => vid.file_id !== fileId))
       setUploadedFiles((prev) => prev.filter((f) => f.id !== fileId))
       if (selectedFile?.id === fileId) {
@@ -2057,6 +2346,7 @@ export default function Home() {
         role: 'assistant',
         content: response.data.response,
         timestamp: new Date(),
+        generatedImageIds: response.data.generated_image_ids || undefined,
       }
 
       const newConvId = response.data.conversation_id
@@ -2582,11 +2872,24 @@ export default function Home() {
   }
 
   const deleteSong = async (songId: string) => {
+    if (!authToken) return
     try {
-      await axios.delete(`${API_BASE_URL}/api/songs/${songId}`)
+      await axios.delete(`${API_BASE_URL}/api/songs/${songId}`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      })
       setSongHistory((prev) => prev.filter((s) => s.song_id !== songId))
       loadSongHistory()
-    } catch (error) {
+    } catch (error: any) {
+      // Handle 401 - authentication expired
+      if (error.response?.status === 401) {
+        console.error('Authentication expired. Please log in again.')
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('username')
+        setAuthToken(null)
+        setIsAuthenticated(false)
+        setShowLogin(true)
+        return
+      }
       console.error('Failed to delete song:', error)
       alert('Failed to delete song')
     }
@@ -2661,7 +2964,7 @@ export default function Home() {
 
       const response = await axios.post(`${API_BASE_URL}/api/song/upload`, formData, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${authToken || localStorage.getItem('auth_token')}`,
           'Content-Type': 'multipart/form-data'
         }
       })
@@ -2697,7 +3000,7 @@ export default function Home() {
         { song_id: songId },
         {
           headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
+            'Authorization': `Bearer ${authToken || localStorage.getItem('auth_token')}`
           }
         }
       )
@@ -2725,7 +3028,7 @@ export default function Home() {
         { song_id: songId, instruction: rewriteInstruction },
         {
           headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
+            'Authorization': `Bearer ${authToken || localStorage.getItem('auth_token')}`
           }
         }
       )
@@ -2753,7 +3056,7 @@ export default function Home() {
         { song_id: songId, style: coverStyle },
         {
           headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
+            'Authorization': `Bearer ${authToken || localStorage.getItem('auth_token')}`
           }
         }
       )
@@ -2781,7 +3084,7 @@ export default function Home() {
         { song_id: songId, variation: altVariation },
         {
           headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
+            'Authorization': `Bearer ${authToken || localStorage.getItem('auth_token')}`
           }
         }
       )
@@ -2825,7 +3128,7 @@ export default function Home() {
       const response = await axios.post(
         `${API_BASE_URL}/api/bsv/inscribe`,
         requestData,
-        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+        { headers: { Authorization: `Bearer ${authToken || localStorage.getItem('auth_token')}` } }
       )
 
       const message: Message = {
@@ -2838,7 +3141,7 @@ export default function Home() {
       
       // Reload inscriptions
       const inscriptionsRes = await axios.get(`${API_BASE_URL}/api/bsv/inscriptions`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        headers: { Authorization: `Bearer ${authToken || localStorage.getItem('auth_token')}` }
       })
       setBsvInscriptions(inscriptionsRes.data.inscriptions || [])
     } catch (error: any) {
@@ -2855,7 +3158,7 @@ export default function Home() {
       const response = await axios.post(
         `${API_BASE_URL}/api/gallery/scan`,
         {},
-        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+        { headers: { Authorization: `Bearer ${authToken || localStorage.getItem('auth_token')}` } }
       )
       setGalleryScanResults(response.data)
     } catch (error: any) {
@@ -2872,7 +3175,7 @@ export default function Home() {
       await axios.post(
         `${API_BASE_URL}/api/gallery/delete`,
         { file_ids: selectedImagesToDelete },
-        { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+        { headers: { Authorization: `Bearer ${authToken || localStorage.getItem('auth_token')}` } }
       )
       setSelectedImagesToDelete([])
       scanGallery() // Rescan after deletion
@@ -3787,7 +4090,7 @@ export default function Home() {
                     {imageHistory.map((img) => (
                       <div
                         key={img.file_id}
-                        className="group flex items-center justify-between p-2 rounded-lg hover:bg-[#f5f5f7] transition-all"
+                        className="group flex items-center gap-2 p-2 rounded-lg hover:bg-[#f5f5f7] transition-all"
                       >
                         <button
                           onClick={() => {
@@ -3799,10 +4102,10 @@ export default function Home() {
                             }
                             setSelectedFile(file)
                           }}
-                          className="flex-1 text-left"
+                          className="flex-1 text-left min-w-0"
                         >
                           <p className="text-sm font-medium text-[#1d1d1f] truncate">{img.filename}</p>
-                          <p className="text-xs text-[#86868b]">{img.dimensions.width}x{img.dimensions.height}</p>
+                          <p className="text-xs text-[#86868b] truncate">{img.dimensions.width}x{img.dimensions.height}</p>
                         </button>
                         <button
                           onClick={(e) => {
@@ -3811,7 +4114,7 @@ export default function Home() {
                               deleteImage(img.file_id)
                             }
                           }}
-                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 rounded transition-all"
+                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 rounded transition-all flex-shrink-0"
                         >
                           <X className="w-3 h-3 text-red-600" />
                         </button>
@@ -3853,7 +4156,7 @@ export default function Home() {
                     {videoHistory.map((vid) => (
                       <div
                         key={vid.file_id}
-                        className="group flex items-center justify-between p-2 rounded-lg hover:bg-[#f5f5f7] transition-all"
+                        className="group flex items-center gap-2 p-2 rounded-lg hover:bg-[#f5f5f7] transition-all"
                       >
                         <button
                           onClick={() => {
@@ -3865,10 +4168,10 @@ export default function Home() {
                             }
                             setSelectedFile(file)
                           }}
-                          className="flex-1 text-left"
+                          className="flex-1 text-left min-w-0"
                         >
                           <p className="text-sm font-medium text-[#1d1d1f] truncate">{vid.filename}</p>
-                          <p className="text-xs text-[#86868b]">{vid.duration.toFixed(1)}s • {vid.dimensions.width}x{vid.dimensions.height}</p>
+                          <p className="text-xs text-[#86868b] truncate">{vid.duration.toFixed(1)}s • {vid.dimensions.width}x{vid.dimensions.height}</p>
                         </button>
                         <button
                           onClick={(e) => {
@@ -3877,7 +4180,7 @@ export default function Home() {
                               deleteVideo(vid.file_id)
                             }
                           }}
-                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 rounded transition-all"
+                          className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 rounded transition-all flex-shrink-0"
                         >
                           <X className="w-3 h-3 text-red-600" />
                         </button>
@@ -4632,6 +4935,19 @@ export default function Home() {
                       <X className="w-4 h-4 text-gray-500" />
                     </button>
                     <p className="whitespace-pre-wrap leading-relaxed text-[15px] pr-6">{message.content}</p>
+                    {message.generatedImageIds && message.generatedImageIds.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-[#e8e8ed] space-y-2">
+                        {message.generatedImageIds.map((imageId) => (
+                          <img
+                            key={imageId}
+                            src={`${API_BASE_URL}/api/image/${imageId}`}
+                            alt="Generated image"
+                            className="max-w-full rounded-lg shadow-sm"
+                            style={{ maxHeight: '500px' }}
+                          />
+                        ))}
+                      </div>
+                    )}
                     {message.audioUrl && (
                       <div className="mt-4 pt-4 border-t border-[#e8e8ed]">
                         <audio 
@@ -5189,7 +5505,7 @@ export default function Home() {
                       return (
                         <div
                           key={skill.id}
-                          className={`bg-white border rounded-2xl p-5 transition-all hover:shadow-md cursor-pointer ${
+                          className={`bg-white border rounded-2xl p-5 transition-all hover:shadow-md cursor-pointer flex flex-col min-h-[140px] ${
                             selectedSkill?.id === skill.id
                               ? 'border-[#007AFF] bg-[#007AFF]/5 shadow-sm'
                               : 'border-[#e8e8ed] hover:border-[#e0e0e0]'
@@ -5206,87 +5522,23 @@ export default function Home() {
                             })
                           }}
                         >
-                          <div className="flex items-start justify-between mb-3">
-                            <div className="flex items-center gap-4 flex-1 min-w-0">
-                              <span className="text-4xl flex-shrink-0 leading-none">{skill.icon}</span>
-                              <div className="flex-1 min-w-0">
-                                <h3 className="font-semibold text-base text-[#1d1d1f] truncate leading-tight">{skill.name}</h3>
-                                {skill.category && (
-                                  <p className="text-xs text-[#86868b] mt-0.5 leading-relaxed">{skill.category}</p>
-                                )}
-                              </div>
+                          <div className="flex items-center gap-4 mb-3 flex-shrink-0">
+                            <span className="text-4xl flex-shrink-0 leading-none">{skill.icon}</span>
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-semibold text-base text-[#1d1d1f] leading-tight whitespace-nowrap overflow-hidden text-ellipsis">{skill.name}</h3>
+                              {skill.category && (
+                                <p className="text-xs text-[#86868b] mt-0.5 leading-relaxed">{skill.category}</p>
+                              )}
                             </div>
-                            <div className="flex items-center gap-2 flex-shrink-0 ml-2" onClick={(e) => e.stopPropagation()}>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleNewDocument(skill.id)
-                                }}
-                                className="p-1.5 hover:bg-[#f5f5f7] rounded-lg transition-colors"
-                                title="New document"
-                              >
-                                <span className="text-base leading-none">✨</span>
-                              </button>
-                              <button
-                                onContextMenu={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  handleOpenFolder(skill.id, e)
-                                }}
-                                onTouchStart={(e) => {
-                                  const touchStart = Date.now()
-                                  const timer = setTimeout(() => {
-                                    handleOpenFolder(skill.id, e)
-                                  }, 500)
-                                  const touchEnd = () => {
-                                    clearTimeout(timer)
-                                    document.removeEventListener('touchend', touchEnd)
-                                  }
-                                  document.addEventListener('touchend', touchEnd)
-                                }}
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleOpenFolder(skill.id, e)
-                                }}
-                                className="p-1.5 hover:bg-[#f5f5f7] rounded-lg transition-colors"
-                                title="Open folder (long press/right click for recent documents)"
-                              >
-                                <span className="text-base leading-none">📁</span>
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleLastDocument(skill.id)
-                                }}
-                                className="p-1.5 hover:bg-[#f5f5f7] rounded-lg transition-colors"
-                                title="Last document"
-                              >
-                                <span className="text-base leading-none">🕐</span>
-                              </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                toggleFavoriteSkill(skill.id)
-                              }}
-                              className={`w-8 h-8 rounded-full transition-all flex items-center justify-center shadow-sm hover:shadow-md ${
-                                isFavorite
-                                  ? 'bg-gradient-to-br from-[#FFD700] to-[#FFA500] text-white border-2 border-[#FFD700]'
-                                  : 'bg-gradient-to-br from-gray-50 to-gray-100 hover:from-gray-100 hover:to-gray-200 border border-gray-200 text-[#86868b]'
-                              }`}
-                              title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-                            >
-                              <Zap className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} />
-                            </button>
-                          </div>
                           </div>
                           <div
-                            className={`overflow-hidden transition-all duration-300 ease-in-out ${
-                              isExpanded ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'
+                            className={`overflow-hidden transition-all duration-300 ease-in-out flex-shrink-0 ${
+                              isExpanded ? 'max-h-96 opacity-100 mb-3' : 'max-h-0 opacity-0'
                             }`}
                           >
-                            <div className="pt-4 border-t border-[#e8e8ed] mt-4">
+                            <div className="w-full pt-3 border-t border-[#e8e8ed]">
                               <p className="text-sm text-[#1d1d1f] mb-4 leading-relaxed font-normal">{skill.description}</p>
-                          <button
+                              <button
                                 onClick={(e) => {
                                   e.stopPropagation()
                                   // Navigate to skill-specific view
@@ -5302,6 +5554,9 @@ export default function Home() {
                                   } else if (skill.id === 'expense_calculator') {
                                     setActiveView('expense_calculator')
                                     loadExpenses()
+                                  } else if (skill.id === 'business_manager') {
+                                    setActiveView('business_manager')
+                                    loadBusiness()
                                   } else if (skill.id === 'meal_planning') {
                                     setActiveView('meal_planning')
                                     loadMealPlans()
@@ -5311,8 +5566,8 @@ export default function Home() {
                                   } else if (skill.id === 'bsv_inscribe') {
                                     setActiveView('bsv_inscribe')
                                   } else {
-                                    // For other skills, use the modal
-                                    openSkillTaskModal(skill)
+                                    // For all other skills, navigate to skill page
+                                    openSkillPage(skill)
                                   }
                                 }}
                                 disabled={executingSkill}
@@ -5326,8 +5581,71 @@ export default function Home() {
                                 ) : (
                                   'Use Skill'
                                 )}
-                          </button>
+                              </button>
                             </div>
+                          </div>
+                          <div className="flex-1"></div>
+                          <div className="flex items-center justify-center gap-2 pt-3 border-t border-[#e8e8ed] flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleNewDocument(skill.id)
+                              }}
+                              className="p-1.5 hover:bg-[#f5f5f7] rounded-lg transition-colors"
+                              title="New document"
+                            >
+                              <span className="text-base leading-none">✨</span>
+                            </button>
+                            <button
+                              onContextMenu={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                handleOpenFolder(skill.id, e)
+                              }}
+                              onTouchStart={(e) => {
+                                const touchStart = Date.now()
+                                const timer = setTimeout(() => {
+                                  handleOpenFolder(skill.id, e)
+                                }, 500)
+                                const touchEnd = () => {
+                                  clearTimeout(timer)
+                                  document.removeEventListener('touchend', touchEnd)
+                                }
+                                document.addEventListener('touchend', touchEnd)
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleOpenFolder(skill.id, e)
+                              }}
+                              className="p-1.5 hover:bg-[#f5f5f7] rounded-lg transition-colors"
+                              title="Open folder (long press/right click for recent documents)"
+                            >
+                              <span className="text-base leading-none">📁</span>
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleLastDocument(skill.id)
+                              }}
+                              className="p-1.5 hover:bg-[#f5f5f7] rounded-lg transition-colors"
+                              title="Last document"
+                            >
+                              <span className="text-base leading-none">🕐</span>
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                toggleFavoriteSkill(skill.id)
+                              }}
+                              className={`w-8 h-8 rounded-full transition-all flex items-center justify-center shadow-sm hover:shadow-md ${
+                                isFavorite
+                                  ? 'bg-gradient-to-br from-[#FFD700] to-[#FFA500] text-white border-2 border-[#FFD700]'
+                                  : 'bg-gradient-to-br from-gray-50 to-gray-100 hover:from-gray-100 hover:to-gray-200 border border-gray-200 text-[#86868b]'
+                              }`}
+                              title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                            >
+                              <Zap className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} />
+                            </button>
                           </div>
                         </div>
                       )
@@ -5778,11 +6096,381 @@ export default function Home() {
                                 </p>
                               )}
                             </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                deleteExpense(expense.id)
+                              }}
+                              className="ml-4 p-2 hover:bg-[#FF3B30]/10 rounded-lg transition-colors text-[#FF3B30] hover:text-[#FF3B30] flex-shrink-0"
+                              title="Delete expense"
+                            >
+                              <span className="text-lg leading-none">×</span>
+                            </button>
                           </div>
                         ))}
                       </div>
                     </div>
                   </div>
+                )}
+              </div>
+            ) : activeView === 'business_manager' ? (
+              <div className="space-y-6">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#5856D6] to-[#7B68EE] flex items-center justify-center">
+                    <span className="text-2xl">🏢</span>
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-semibold text-[#1d1d1f]">Business Manager</h2>
+                    <p className="text-sm text-[#86868b]">Complete business dashboard with expense and income tracking</p>
+                  </div>
+                </div>
+
+                {loadingBusiness ? (
+                  <div className="text-center py-12">
+                    <Loader2 className="w-8 h-8 text-[#5856D6] animate-spin mx-auto mb-4" />
+                    <p className="text-[#86868b]">Loading business data...</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Key Metrics Dashboard */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div className="bg-white border border-[#e8e8ed] rounded-xl p-5">
+                        <p className="text-sm text-[#86868b] mb-1">Total Income</p>
+                        <p className="text-2xl font-semibold text-[#34C759]">
+                          ${(businessData?.total_income || 0).toFixed(2)}
+                        </p>
+                      </div>
+                      <div className="bg-white border border-[#e8e8ed] rounded-xl p-5">
+                        <p className="text-sm text-[#86868b] mb-1">Total Expenses</p>
+                        <p className="text-2xl font-semibold text-[#FF3B30]">
+                          ${(businessData?.total_expenses || 0).toFixed(2)}
+                        </p>
+                      </div>
+                      <div className="bg-white border border-[#e8e8ed] rounded-xl p-5">
+                        <p className="text-sm text-[#86868b] mb-1">Profit</p>
+                        <p className={`text-2xl font-semibold ${(businessData?.profit || 0) >= 0 ? 'text-[#34C759]' : 'text-[#FF3B30]'}`}>
+                          ${(businessData?.profit || 0).toFixed(2)}
+                        </p>
+                      </div>
+                      <div className="bg-white border border-[#e8e8ed] rounded-xl p-5">
+                        <p className="text-sm text-[#86868b] mb-1">Customers</p>
+                        <p className="text-2xl font-semibold text-[#1d1d1f]">
+                          {businessData?.customer_count || 0}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Add Expense & Income Forms */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Add Expense */}
+                      <div className="bg-white border border-[#e8e8ed] rounded-xl p-6">
+                        <h3 className="text-lg font-semibold text-[#1d1d1f] mb-4">Add Expense</h3>
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-sm font-medium text-[#1d1d1f] mb-1">Amount ($)</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={newBusinessExpenseAmount}
+                                onChange={(e) => setNewBusinessExpenseAmount(e.target.value)}
+                                placeholder="0.00"
+                                className="w-full px-4 py-3 rounded-xl bg-[#f5f5f7] border border-[#e8e8ed] focus:outline-none focus:ring-2 focus:ring-[#FF3B30]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-[#1d1d1f] mb-1">Category</label>
+                              <input
+                                type="text"
+                                value={newBusinessExpenseCategory}
+                                onChange={(e) => setNewBusinessExpenseCategory(e.target.value)}
+                                placeholder="e.g., Supplies, Rent"
+                                className="w-full px-4 py-3 rounded-xl bg-[#f5f5f7] border border-[#e8e8ed] focus:outline-none focus:ring-2 focus:ring-[#FF3B30]"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-[#1d1d1f] mb-1">Description</label>
+                            <input
+                              type="text"
+                              value={newBusinessExpenseDescription}
+                              onChange={(e) => setNewBusinessExpenseDescription(e.target.value)}
+                              placeholder="What was this expense for?"
+                              className="w-full px-4 py-3 rounded-xl bg-[#f5f5f7] border border-[#e8e8ed] focus:outline-none focus:ring-2 focus:ring-[#FF3B30]"
+                              onKeyPress={(e) => e.key === 'Enter' && addBusinessExpense()}
+                            />
+                          </div>
+                          <button
+                            onClick={addBusinessExpense}
+                            disabled={!newBusinessExpenseAmount.trim() || !newBusinessExpenseCategory.trim()}
+                            className="w-full px-6 py-3 rounded-xl bg-gradient-to-r from-[#FF3B30] to-[#FF6B6B] text-white font-semibold hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Add Expense
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Add Income */}
+                      <div className="bg-white border border-[#e8e8ed] rounded-xl p-6">
+                        <h3 className="text-lg font-semibold text-[#1d1d1f] mb-4">Add Income</h3>
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-sm font-medium text-[#1d1d1f] mb-1">Amount ($)</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={newBusinessIncomeAmount}
+                                onChange={(e) => setNewBusinessIncomeAmount(e.target.value)}
+                                placeholder="0.00"
+                                className="w-full px-4 py-3 rounded-xl bg-[#f5f5f7] border border-[#e8e8ed] focus:outline-none focus:ring-2 focus:ring-[#34C759]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-[#1d1d1f] mb-1">Source</label>
+                              <input
+                                type="text"
+                                value={newBusinessIncomeSource}
+                                onChange={(e) => setNewBusinessIncomeSource(e.target.value)}
+                                placeholder="e.g., Sales, Services"
+                                className="w-full px-4 py-3 rounded-xl bg-[#f5f5f7] border border-[#e8e8ed] focus:outline-none focus:ring-2 focus:ring-[#34C759]"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-[#1d1d1f] mb-1">Description</label>
+                            <input
+                              type="text"
+                              value={newBusinessIncomeDescription}
+                              onChange={(e) => setNewBusinessIncomeDescription(e.target.value)}
+                              placeholder="What was this income from?"
+                              className="w-full px-4 py-3 rounded-xl bg-[#f5f5f7] border border-[#e8e8ed] focus:outline-none focus:ring-2 focus:ring-[#34C759]"
+                              onKeyPress={(e) => e.key === 'Enter' && addBusinessIncome()}
+                            />
+                          </div>
+                          <button
+                            onClick={addBusinessIncome}
+                            disabled={!newBusinessIncomeAmount.trim() || !newBusinessIncomeSource.trim()}
+                            className="w-full px-6 py-3 rounded-xl bg-gradient-to-r from-[#34C759] to-[#30D158] text-white font-semibold hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Add Income
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Category Breakdown */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Expense Categories */}
+                      <div className="bg-white border border-[#e8e8ed] rounded-xl p-6">
+                        <h3 className="text-lg font-semibold text-[#1d1d1f] mb-4">Expense Categories</h3>
+                        <div className="space-y-2">
+                          {Object.entries(businessData?.expense_categories || {})
+                            .sort(([, a]: any, [, b]: any) => b - a)
+                            .map(([category, total]: [string, any]) => (
+                              <div key={category} className="flex items-center justify-between py-2 border-b border-[#e8e8ed] last:border-b-0">
+                                <span className="text-[#1d1d1f] font-medium capitalize">{category}</span>
+                                <span className="text-[#FF3B30] font-semibold">${total.toFixed(2)}</span>
+                              </div>
+                            ))}
+                          {Object.keys(businessData?.expense_categories || {}).length === 0 && (
+                            <p className="text-sm text-[#86868b] text-center py-4">No expenses yet</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Income Sources */}
+                      <div className="bg-white border border-[#e8e8ed] rounded-xl p-6">
+                        <h3 className="text-lg font-semibold text-[#1d1d1f] mb-4">Income Sources</h3>
+                        <div className="space-y-2">
+                          {Object.entries(businessData?.income_sources || {})
+                            .sort(([, a]: any, [, b]: any) => b - a)
+                            .map(([source, total]: [string, any]) => (
+                              <div key={source} className="flex items-center justify-between py-2 border-b border-[#e8e8ed] last:border-b-0">
+                                <span className="text-[#1d1d1f] font-medium capitalize">{source}</span>
+                                <span className="text-[#34C759] font-semibold">${total.toFixed(2)}</span>
+                              </div>
+                            ))}
+                          {Object.keys(businessData?.income_sources || {}).length === 0 && (
+                            <p className="text-sm text-[#86868b] text-center py-4">No income yet</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Recent Transactions */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Recent Expenses */}
+                      <div className="bg-white border border-[#e8e8ed] rounded-xl p-6">
+                        <h3 className="text-lg font-semibold text-[#1d1d1f] mb-4">Recent Expenses</h3>
+                        <div className="space-y-2">
+                          {(businessData?.expenses || [])
+                            .slice(-10)
+                            .reverse()
+                            .map((expense: any) => (
+                              <div
+                                key={expense.id}
+                                className="flex items-center justify-between p-3 border border-[#e8e8ed] rounded-xl hover:shadow-sm transition-all"
+                              >
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="px-2 py-1 text-xs font-medium bg-[#FF3B30]/10 text-[#FF3B30] rounded capitalize">
+                                      {expense.category || 'other'}
+                                    </span>
+                                    <span className="text-base font-semibold text-[#1d1d1f]">${(expense.amount || 0).toFixed(2)}</span>
+                                  </div>
+                                  {expense.description && (
+                                    <p className="text-sm text-[#86868b]">{expense.description}</p>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={() => deleteBusinessExpense(expense.id)}
+                                  className="ml-4 p-2 hover:bg-[#FF3B30]/10 rounded-lg transition-colors text-[#FF3B30] flex-shrink-0"
+                                  title="Delete expense"
+                                >
+                                  <span className="text-lg leading-none">×</span>
+                                </button>
+                              </div>
+                            ))}
+                          {(businessData?.expenses || []).length === 0 && (
+                            <p className="text-sm text-[#86868b] text-center py-4">No expenses yet</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Recent Income */}
+                      <div className="bg-white border border-[#e8e8ed] rounded-xl p-6">
+                        <h3 className="text-lg font-semibold text-[#1d1d1f] mb-4">Recent Income</h3>
+                        <div className="space-y-2">
+                          {(businessData?.income || [])
+                            .slice(-10)
+                            .reverse()
+                            .map((income: any) => (
+                              <div
+                                key={income.id}
+                                className="flex items-center justify-between p-3 border border-[#e8e8ed] rounded-xl hover:shadow-sm transition-all"
+                              >
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="px-2 py-1 text-xs font-medium bg-[#34C759]/10 text-[#34C759] rounded capitalize">
+                                      {income.source || 'other'}
+                                    </span>
+                                    <span className="text-base font-semibold text-[#1d1d1f]">${(income.amount || 0).toFixed(2)}</span>
+                                  </div>
+                                  {income.description && (
+                                    <p className="text-sm text-[#86868b]">{income.description}</p>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={() => deleteBusinessIncome(income.id)}
+                                  className="ml-4 p-2 hover:bg-[#FF3B30]/10 rounded-lg transition-colors text-[#FF3B30] flex-shrink-0"
+                                  title="Delete income"
+                                >
+                                  <span className="text-lg leading-none">×</span>
+                                </button>
+                              </div>
+                            ))}
+                          {(businessData?.income || []).length === 0 && (
+                            <p className="text-sm text-[#86868b] text-center py-4">No income yet</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Customers & Operating Hours */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Customers */}
+                      <div className="bg-white border border-[#e8e8ed] rounded-xl p-6">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-lg font-semibold text-[#1d1d1f]">Customers</h3>
+                          <button
+                            onClick={() => {
+                              setNewCustomerName('')
+                              setNewCustomerEmail('')
+                              setNewCustomerPhone('')
+                              setNewCustomerAddress('')
+                              setNewCustomerNotes('')
+                            }}
+                            className="text-sm text-[#007AFF] hover:underline"
+                          >
+                            + Add Customer
+                          </button>
+                        </div>
+                        <div className="space-y-3 mb-4">
+                          <input
+                            type="text"
+                            value={newCustomerName}
+                            onChange={(e) => setNewCustomerName(e.target.value)}
+                            placeholder="Customer Name"
+                            className="w-full px-4 py-2 rounded-xl bg-[#f5f5f7] border border-[#e8e8ed] focus:outline-none focus:ring-2 focus:ring-[#5856D6]"
+                          />
+                          <input
+                            type="email"
+                            value={newCustomerEmail}
+                            onChange={(e) => setNewCustomerEmail(e.target.value)}
+                            placeholder="Email (optional)"
+                            className="w-full px-4 py-2 rounded-xl bg-[#f5f5f7] border border-[#e8e8ed] focus:outline-none focus:ring-2 focus:ring-[#5856D6]"
+                          />
+                          <input
+                            type="tel"
+                            value={newCustomerPhone}
+                            onChange={(e) => setNewCustomerPhone(e.target.value)}
+                            placeholder="Phone (optional)"
+                            className="w-full px-4 py-2 rounded-xl bg-[#f5f5f7] border border-[#e8e8ed] focus:outline-none focus:ring-2 focus:ring-[#5856D6]"
+                          />
+                          <button
+                            onClick={addBusinessCustomer}
+                            disabled={!newCustomerName.trim()}
+                            className="w-full px-4 py-2 rounded-xl bg-gradient-to-r from-[#5856D6] to-[#7B68EE] text-white font-semibold hover:opacity-90 transition-all disabled:opacity-50"
+                          >
+                            Add Customer
+                          </button>
+                        </div>
+                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                          {(businessData?.customers || []).map((customer: any) => (
+                            <div
+                              key={customer.id}
+                              className="flex items-center justify-between p-3 border border-[#e8e8ed] rounded-xl"
+                            >
+                              <div className="flex-1">
+                                <p className="font-medium text-[#1d1d1f]">{customer.name}</p>
+                                {customer.email && (
+                                  <p className="text-sm text-[#86868b]">{customer.email}</p>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => deleteBusinessCustomer(customer.id)}
+                                className="ml-2 p-1.5 hover:bg-[#FF3B30]/10 rounded-lg transition-colors text-[#FF3B30]"
+                                title="Delete customer"
+                              >
+                                <span className="text-base leading-none">×</span>
+                              </button>
+                            </div>
+                          ))}
+                          {(businessData?.customers || []).length === 0 && (
+                            <p className="text-sm text-[#86868b] text-center py-4">No customers yet</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Operating Hours */}
+                      <div className="bg-white border border-[#e8e8ed] rounded-xl p-6">
+                        <h3 className="text-lg font-semibold text-[#1d1d1f] mb-4">Operating Hours</h3>
+                        <div className="space-y-2">
+                          {Object.entries(businessData?.operating_hours || {}).map(([day, hours]: [string, any]) => (
+                            <div key={day} className="flex items-center justify-between py-2 border-b border-[#e8e8ed] last:border-b-0">
+                              <span className="text-[#1d1d1f] font-medium capitalize">{day}</span>
+                              <span className="text-sm text-[#86868b]">
+                                {hours.closed ? 'Closed' : `${hours.open || 'N/A'} - ${hours.close || 'N/A'}`}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-xs text-[#86868b] mt-4">Operating hours can be updated via API</p>
+                      </div>
+                    </div>
+
+                  </>
                 )}
               </div>
             ) : activeView === 'bills' ? (
@@ -6761,7 +7449,71 @@ export default function Home() {
                   </p>
                 </div>
               </div>
-            ) : null}
+            ) : activeView.startsWith('skill_') ? (() => {
+              const skillId = activeView.replace('skill_', '')
+              const skill = skills.find(s => s.id === skillId) || currentSkillView
+              if (!skill) return null
+              
+              return (
+                <div className="space-y-6">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#007AFF] to-[#5856D6] flex items-center justify-center">
+                      <span className="text-2xl">{skill.icon}</span>
+                    </div>
+                    <div>
+                      <h2 className="text-2xl font-semibold text-[#1d1d1f]">{skill.name}</h2>
+                      <p className="text-sm text-[#86868b]">{skill.description}</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-white border border-[#e8e8ed] rounded-xl p-6">
+                    <h3 className="text-lg font-semibold text-[#1d1d1f] mb-4">Use {skill.name}</h3>
+                    <div className="space-y-3">
+                      <input
+                        type="text"
+                        value={skillTask}
+                        onChange={(e) => setSkillTask(e.target.value)}
+                        placeholder="What would you like to do with this skill?"
+                        className="w-full px-4 py-3 rounded-xl bg-[#f5f5f7] border border-[#e8e8ed] focus:outline-none focus:ring-2 focus:ring-[#007AFF] focus:border-[#007AFF] transition-all text-[15px] placeholder:text-[#86868b]"
+                        onKeyPress={(e) => e.key === 'Enter' && skillTask.trim() && handleExecuteSkill(skill, skillTask)}
+                        autoFocus
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            if (skillTask.trim()) {
+                              handleExecuteSkill(skill, skillTask)
+                              setSkillTask('')
+                            }
+                          }}
+                          disabled={!skillTask.trim() || executingSkill}
+                          className="flex-1 px-5 py-3 rounded-xl bg-[#007AFF] text-white font-medium hover:bg-[#0051D5] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        >
+                          {executingSkill ? (
+                            <>
+                              <Loader2 className="w-5 h-5 animate-spin" />
+                              Executing...
+                            </>
+                          ) : (
+                            'Execute'
+                          )}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActiveView('skills')
+                            setCurrentSkillView(null)
+                            setSkillTask('')
+                          }}
+                          className="px-5 py-3 rounded-xl bg-[#f5f5f7] border border-[#e8e8ed] hover:bg-[#e8e8ed] transition-all font-medium"
+                        >
+                          Back
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })() : null}
 
             {activeView === 'chat' && <div ref={messagesEndRef} />}
           </div>
@@ -6891,9 +7643,27 @@ export default function Home() {
                   {recentDocuments.map((doc, index) => (
                     <button
                       key={doc.document_id || index}
-                      onClick={() => {
-                        // TODO: Open document
-                        alert(`Opening document: ${doc.document_id}`)
+                      onClick={async () => {
+                        if (!authToken) return
+                        try {
+                          // Open the document folder
+                          await axios.post(
+                            `${API_BASE_URL}/api/files/open-folder`,
+                            { skill_id: doc.skill_id || recentDocumentsSkillId },
+                            { headers: { Authorization: `Bearer ${authToken}` } }
+                          )
+                          // Show document info in chat
+                          const message: Message = {
+                            id: Date.now().toString(),
+                            role: 'assistant',
+                            content: `📄 **Opened Document**\n\nDocument ID: ${doc.document_id}\nCreated: ${doc.created_at ? new Date(doc.created_at).toLocaleString() : 'Unknown'}\n\nThe folder containing this document has been opened.`,
+                            timestamp: new Date(),
+                          }
+                          setMessages((prev) => [...prev, message])
+                          setActiveView('chat')
+                        } catch (error: any) {
+                          alert(`Failed to open document folder: ${error.response?.data?.detail || error.message}`)
+                        }
                         setShowRecentDocuments(false)
                         setContextMenuPosition(null)
                       }}
@@ -7011,61 +7781,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Skill Task Modal */}
-      {showSkillTaskModal && skillTaskModalSkill && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowSkillTaskModal(false)}>
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-4 mb-4">
-              <span className="text-3xl">{skillTaskModalSkill.icon}</span>
-              <div>
-                <h3 className="text-lg font-semibold text-[#1d1d1f]">{skillTaskModalSkill.name}</h3>
-                <p className="text-sm text-[#86868b]">{skillTaskModalSkill.description}</p>
-              </div>
-              <button
-                onClick={() => setShowSkillTaskModal(false)}
-                className="ml-auto p-1 hover:bg-[#f5f5f7] rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5 text-[#86868b]" />
-              </button>
-            </div>
-            <div className="space-y-3">
-              <input
-                type="text"
-                value={skillTask}
-                onChange={(e) => setSkillTask(e.target.value)}
-                placeholder="What would you like to do with this skill?"
-                className="w-full px-4 py-3 rounded-xl bg-[#f5f5f7] border border-[#e8e8ed] focus:outline-none focus:ring-2 focus:ring-[#007AFF] focus:border-[#007AFF] transition-all text-[15px] placeholder:text-[#86868b]"
-                onKeyPress={(e) => e.key === 'Enter' && skillTask.trim() && handleExecuteSkill(skillTaskModalSkill, skillTask)}
-                autoFocus
-              />
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    if (skillTask.trim()) {
-                      handleExecuteSkill(skillTaskModalSkill, skillTask)
-                      setShowSkillTaskModal(false)
-                      setSkillTask('')
-                    }
-                  }}
-                  disabled={!skillTask.trim() || executingSkill}
-                  className="flex-1 px-5 py-3 rounded-xl bg-[#007AFF] text-white font-medium hover:bg-[#0051D5] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {executingSkill ? 'Executing...' : 'Execute'}
-                </button>
-                <button
-                  onClick={() => {
-                    setShowSkillTaskModal(false)
-                    setSkillTask('')
-                  }}
-                  className="px-5 py-3 rounded-xl bg-[#f5f5f7] border border-[#e8e8ed] hover:bg-[#e8e8ed] transition-all font-medium"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
