@@ -15,15 +15,13 @@ import {
   Animated,
   KeyboardAvoidingView,
   Platform,
-  Dimensions,
   ActivityIndicator,
-  Modal,
-  Pressable
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Auto-detect API URL
 const getApiUrl = () => {
@@ -31,7 +29,10 @@ const getApiUrl = () => {
 };
 
 const API_BASE_URL = getApiUrl();
-const { width, height } = Dimensions.get('window');
+
+// Token storage keys
+const TOKEN_KEY = '@PersonalAI:token';
+const USERNAME_KEY = '@PersonalAI:username';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -137,11 +138,17 @@ function LoginScreen({ navigation }) {
         password: password,
       });
 
-      // Store token
-      // In a real app, use secure storage
+      // Store token and username
       if (response.data.token) {
-        // Navigate to main app
-        navigation.replace('Main');
+        await AsyncStorage.setItem(TOKEN_KEY, response.data.token);
+        await AsyncStorage.setItem(USERNAME_KEY, username.trim());
+        
+        // Check if user needs to select assistant
+        if (response.data.assistant) {
+          navigation.replace('Main');
+        } else {
+          navigation.replace('AssistantSelect');
+        }
       }
     } catch (error) {
       Alert.alert('Login Failed', error.response?.data?.detail || error.message);
@@ -263,6 +270,9 @@ function SignUpScreen({ navigation }) {
       });
 
       if (response.data.token) {
+        await AsyncStorage.setItem(TOKEN_KEY, response.data.token);
+        await AsyncStorage.setItem(USERNAME_KEY, username.trim());
+        
         Alert.alert('Success', 'Account created!', [
           { text: 'OK', onPress: () => navigation.replace('AssistantSelect') }
         ]);
@@ -374,11 +384,17 @@ function AssistantSelectScreen({ navigation }) {
     setLoading(true);
 
     try {
-      // In a real app, get token from secure storage
+      const token = await AsyncStorage.getItem(TOKEN_KEY);
+      if (!token) {
+        Alert.alert('Error', 'Please login first');
+        navigation.replace('Login');
+        return;
+      }
+
       await axios.post(
         `${API_BASE_URL}/api/auth/select-assistant`,
         { assistant_id: assistant.id },
-        { headers: { Authorization: 'Bearer YOUR_TOKEN' } }
+        { headers: { Authorization: `Bearer ${token}` } }
       );
 
       navigation.replace('Main');
@@ -491,10 +507,17 @@ function ChatScreen() {
     setLoading(true);
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/chat`, {
-        message: messageText,
-        conversation_id: conversationId,
-      });
+      const token = await AsyncStorage.getItem(TOKEN_KEY);
+      const response = await axios.post(
+        `${API_BASE_URL}/api/chat`,
+        {
+          message: messageText,
+          conversation_id: conversationId,
+        },
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        }
+      );
 
       const assistantMessage = {
         id: (Date.now() + 1).toString(),
@@ -522,10 +545,10 @@ function ChatScreen() {
       >
         <Animated.View style={[styles.chatContent, { opacity: fadeAnim }]}>
           {messages.length === 0 ? (
-            <View style={styles.welcomeContainer}>
+          <View style={styles.welcomeContainer}>
               <View style={styles.welcomeIconContainer}>
                 <Ionicons name="chatbubbles" size={64} color={colors.primary} />
-              </View>
+          </View>
               <Text style={styles.welcomeText}>Welcome to Personal AI</Text>
               <Text style={styles.welcomeSubtext}>Start a conversation with your spiritual companion</Text>
             </View>
@@ -538,10 +561,10 @@ function ChatScreen() {
             >
               {messages.map((msg, index) => (
                 <Animated.View
-                  key={msg.id}
-                  style={[
-                    styles.messageBubble,
-                    msg.role === 'user' ? styles.userMessage : styles.assistantMessage,
+            key={msg.id}
+            style={[
+              styles.messageBubble,
+              msg.role === 'user' ? styles.userMessage : styles.assistantMessage,
                     {
                       opacity: fadeAnim,
                       transform: [{
@@ -568,25 +591,25 @@ function ChatScreen() {
                   <View style={[styles.typingDot, styles.typingDotDelay2]} />
                 </View>
               )}
-            </ScrollView>
+      </ScrollView>
           )}
 
-          <View style={styles.inputContainer}>
+      <View style={styles.inputContainer}>
             <View style={styles.inputWrapperChat}>
-              <TextInput
+        <TextInput
                 style={styles.inputChat}
-                value={input}
-                onChangeText={setInput}
+          value={input}
+          onChangeText={setInput}
                 placeholder="Type a message..."
                 placeholderTextColor={colors.textSecondary}
-                multiline
+          multiline
                 maxLength={1000}
-                onSubmitEditing={sendMessage}
+          onSubmitEditing={sendMessage}
                 returnKeyType="send"
-              />
-              <TouchableOpacity
+        />
+        <TouchableOpacity
                 style={[styles.sendButton, (!input.trim() || loading) && styles.sendButtonDisabled]}
-                onPress={sendMessage}
+          onPress={sendMessage}
                 disabled={!input.trim() || loading}
                 activeOpacity={0.7}
               >
@@ -595,9 +618,9 @@ function ChatScreen() {
                   size={20} 
                   color={input.trim() && !loading ? "#fff" : colors.textSecondary} 
                 />
-              </TouchableOpacity>
-            </View>
-          </View>
+        </TouchableOpacity>
+      </View>
+    </View>
         </Animated.View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -626,9 +649,12 @@ function GenerateScreen() {
     if (!imagePrompt.trim() || generating) return;
     setGenerating(true);
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/image/generate`, {
-        prompt: imagePrompt,
-      });
+      const token = await AsyncStorage.getItem(TOKEN_KEY);
+      const response = await axios.post(
+        `${API_BASE_URL}/api/image/generate`,
+        { prompt: imagePrompt },
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+      );
       setGeneratedImage(`${API_BASE_URL}/api/image/${response.data.file_id}`);
       Alert.alert('Success', 'Image generated!');
     } catch (error) {
@@ -642,9 +668,12 @@ function GenerateScreen() {
     if (!videoPrompt.trim() || generating) return;
     setGenerating(true);
     try {
-      await axios.post(`${API_BASE_URL}/api/video/generate`, {
-        prompt: videoPrompt,
-      });
+      const token = await AsyncStorage.getItem(TOKEN_KEY);
+      await axios.post(
+        `${API_BASE_URL}/api/video/generate`,
+        { prompt: videoPrompt },
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+      );
       Alert.alert('Success', 'Video generated!');
     } catch (error) {
       Alert.alert('Error', error.response?.data?.detail || error.message);
@@ -657,10 +686,15 @@ function GenerateScreen() {
     if (!songPrompt.trim() || generating) return;
     setGenerating(true);
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/song/generate`, {
-        prompt: songPrompt,
-        for_fans_of: songForFansOf.trim() || undefined,
-      });
+      const token = await AsyncStorage.getItem(TOKEN_KEY);
+      const response = await axios.post(
+        `${API_BASE_URL}/api/song/generate`,
+        {
+          prompt: songPrompt,
+          for_fans_of: songForFansOf.trim() || undefined,
+        },
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+      );
       Alert.alert('Success', 'Song generated!');
     } catch (error) {
       Alert.alert('Error', error.response?.data?.detail || error.message);
@@ -686,27 +720,27 @@ function GenerateScreen() {
               </View>
               <Text style={styles.generateCardTitle}>Generate Image</Text>
             </View>
-            <TextInput
+        <TextInput
               style={styles.generateInput}
-              value={imagePrompt}
-              onChangeText={setImagePrompt}
+          value={imagePrompt}
+          onChangeText={setImagePrompt}
               placeholder="Describe the image you want to create..."
               placeholderTextColor={colors.textSecondary}
-              multiline
-            />
-            <TouchableOpacity
+          multiline
+        />
+        <TouchableOpacity
               style={[styles.generateButton, styles.imageButton, generating && styles.generateButtonDisabled]}
-              onPress={handleGenerateImage}
-              disabled={generating}
+          onPress={handleGenerateImage}
+          disabled={generating}
               activeOpacity={0.8}
-            >
+        >
               <Ionicons name="sparkles" size={20} color="#fff" />
               <Text style={styles.generateButtonText}>Generate</Text>
-            </TouchableOpacity>
-            {generatedImage && (
-              <Image source={{ uri: generatedImage }} style={styles.generatedImage} />
-            )}
-          </View>
+        </TouchableOpacity>
+        {generatedImage && (
+          <Image source={{ uri: generatedImage }} style={styles.generatedImage} />
+        )}
+      </View>
 
           {/* Video Generation Card */}
           <View style={styles.generateCard}>
@@ -716,24 +750,24 @@ function GenerateScreen() {
               </View>
               <Text style={styles.generateCardTitle}>Generate Video</Text>
             </View>
-            <TextInput
+        <TextInput
               style={styles.generateInput}
-              value={videoPrompt}
-              onChangeText={setVideoPrompt}
+          value={videoPrompt}
+          onChangeText={setVideoPrompt}
               placeholder="Describe the video you want to create..."
               placeholderTextColor={colors.textSecondary}
-              multiline
-            />
-            <TouchableOpacity
+          multiline
+        />
+        <TouchableOpacity
               style={[styles.generateButton, styles.videoButton, generating && styles.generateButtonDisabled]}
-              onPress={handleGenerateVideo}
-              disabled={generating}
+          onPress={handleGenerateVideo}
+          disabled={generating}
               activeOpacity={0.8}
-            >
+        >
               <Ionicons name="play" size={20} color="#fff" />
               <Text style={styles.generateButtonText}>Generate</Text>
-            </TouchableOpacity>
-          </View>
+        </TouchableOpacity>
+      </View>
 
           {/* Song Generation Card */}
           <View style={styles.generateCard}>
@@ -743,32 +777,32 @@ function GenerateScreen() {
               </View>
               <Text style={styles.generateCardTitle}>Write Song</Text>
             </View>
-            <TextInput
+        <TextInput
               style={styles.generateInput}
-              value={songPrompt}
-              onChangeText={setSongPrompt}
+          value={songPrompt}
+          onChangeText={setSongPrompt}
               placeholder="Song title or theme..."
               placeholderTextColor={colors.textSecondary}
-            />
-            <TextInput
+        />
+        <TextInput
               style={[styles.generateInput, styles.marginTop]}
-              value={songForFansOf}
-              onChangeText={setSongForFansOf}
+          value={songForFansOf}
+          onChangeText={setSongForFansOf}
               placeholder="For fans of... (optional)"
               placeholderTextColor={colors.textSecondary}
-            />
-            <TouchableOpacity
+        />
+        <TouchableOpacity
               style={[styles.generateButton, styles.songButton, generating && styles.generateButtonDisabled]}
-              onPress={handleGenerateSong}
-              disabled={generating}
+          onPress={handleGenerateSong}
+          disabled={generating}
               activeOpacity={0.8}
-            >
+        >
               <Ionicons name="musical-note" size={20} color="#fff" />
               <Text style={styles.generateButtonText}>Generate</Text>
-            </TouchableOpacity>
-          </View>
+        </TouchableOpacity>
+      </View>
         </Animated.View>
-      </ScrollView>
+    </ScrollView>
     </SafeAreaView>
   );
 }
@@ -811,6 +845,7 @@ function MediaScreen() {
     setEditing(true);
 
     try {
+      const token = await AsyncStorage.getItem(TOKEN_KEY);
       const formData = new FormData();
       formData.append('file', {
         uri: selectedImage,
@@ -818,14 +853,23 @@ function MediaScreen() {
         name: 'image.jpg',
       });
 
+      const headers = { 'Content-Type': 'multipart/form-data' };
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
       const uploadResponse = await axios.post(`${API_BASE_URL}/api/upload/image`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        headers,
       });
 
-      const editResponse = await axios.post(`${API_BASE_URL}/api/image/edit`, {
-        file_id: uploadResponse.data.file_id,
-        instruction: editInstruction,
-      });
+      const editResponse = await axios.post(
+        `${API_BASE_URL}/api/image/edit`,
+        {
+          file_id: uploadResponse.data.file_id,
+          instruction: editInstruction,
+        },
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+      );
 
       Alert.alert('Success', 'Image edited!');
       setEditInstruction('');
@@ -860,39 +904,39 @@ function MediaScreen() {
             >
               <Ionicons name="image-outline" size={32} color={colors.primary} />
               <Text style={styles.uploadButtonText}>Pick Image from Gallery</Text>
-            </TouchableOpacity>
+        </TouchableOpacity>
 
-            {selectedImage && (
-              <Image source={{ uri: selectedImage }} style={styles.previewImage} />
-            )}
+        {selectedImage && (
+          <Image source={{ uri: selectedImage }} style={styles.previewImage} />
+        )}
 
-            <TextInput
+        <TextInput
               style={[styles.generateInput, styles.marginTop]}
-              value={editInstruction}
-              onChangeText={setEditInstruction}
+          value={editInstruction}
+          onChangeText={setEditInstruction}
               placeholder="Edit instruction (e.g., 'make it brighter', 'add sunset')"
               placeholderTextColor={colors.textSecondary}
-              multiline
-            />
+          multiline
+        />
 
-            <TouchableOpacity
+        <TouchableOpacity
               style={[
                 styles.generateButton, 
                 styles.editButton,
                 (!selectedImage || !editInstruction.trim() || editing) && styles.generateButtonDisabled
               ]}
-              onPress={uploadAndEditImage}
-              disabled={!selectedImage || !editInstruction.trim() || editing}
+          onPress={uploadAndEditImage}
+          disabled={!selectedImage || !editInstruction.trim() || editing}
               activeOpacity={0.8}
-            >
-              <Ionicons name="create" size={20} color="#fff" />
+        >
+          <Ionicons name="create" size={20} color="#fff" />
               <Text style={styles.generateButtonText}>
                 {editing ? 'Editing...' : 'Edit Image'}
               </Text>
-            </TouchableOpacity>
-          </View>
+        </TouchableOpacity>
+      </View>
         </Animated.View>
-      </ScrollView>
+    </ScrollView>
     </SafeAreaView>
   );
 }
@@ -900,24 +944,24 @@ function MediaScreen() {
 // Main Tab Navigator
 function MainTabs() {
   return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused, color, size }) => {
-          let iconName;
+      <Tab.Navigator
+        screenOptions={({ route }) => ({
+          tabBarIcon: ({ focused, color, size }) => {
+            let iconName;
 
-          if (route.name === 'Chat') {
-            iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
-          } else if (route.name === 'Generate') {
-            iconName = focused ? 'sparkles' : 'sparkles-outline';
-          } else if (route.name === 'Media') {
-            iconName = focused ? 'images' : 'images-outline';
-          }
+            if (route.name === 'Chat') {
+              iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
+            } else if (route.name === 'Generate') {
+              iconName = focused ? 'sparkles' : 'sparkles-outline';
+            } else if (route.name === 'Media') {
+              iconName = focused ? 'images' : 'images-outline';
+            }
 
-          return <Ionicons name={iconName} size={size} color={color} />;
-        },
+            return <Ionicons name={iconName} size={size} color={color} />;
+          },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textSecondary,
-        headerStyle: {
+          headerStyle: {
           backgroundColor: colors.card,
           borderBottomWidth: 0,
           elevation: 0,
@@ -957,20 +1001,58 @@ function MainTabs() {
         component={MediaScreen}
         options={{ title: 'Media' }}
       />
-    </Tab.Navigator>
+      </Tab.Navigator>
   );
 }
 
 // Root Navigator
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Check authentication status on mount
   useEffect(() => {
-    // In a real app, check secure storage for token
-    // For now, default to login screen
-    setIsAuthenticated(false);
+    checkAuthStatus();
   }, []);
+
+  const checkAuthStatus = async () => {
+    try {
+      const token = await AsyncStorage.getItem(TOKEN_KEY);
+      if (token) {
+        // Verify token is still valid
+        try {
+          const response = await axios.get(`${API_BASE_URL}/api/auth/me`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          
+          if (response.data.assistant) {
+            setIsAuthenticated(true);
+          } else {
+            // User needs to select assistant
+            setIsAuthenticated(false);
+          }
+        } catch (error) {
+          // Token invalid, clear storage
+          await AsyncStorage.multiRemove([TOKEN_KEY, USERNAME_KEY]);
+          setIsAuthenticated(false);
+        }
+      } else {
+        setIsAuthenticated(false);
+      }
+    } catch (error) {
+      setIsAuthenticated(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <NavigationContainer>

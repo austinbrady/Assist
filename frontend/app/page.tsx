@@ -287,6 +287,7 @@ export default function Home() {
   const [newMealPlanDate, setNewMealPlanDate] = useState('')
   const [newMealPlanMeals, setNewMealPlanMeals] = useState('')
   const [wallet, setWallet] = useState<any>(null)
+  const [solanaWallet, setSolanaWallet] = useState<any>(null)
   const [loadingWallet, setLoadingWallet] = useState(false)
   const [regeneratingWallet, setRegeneratingWallet] = useState(false)
   const [totalAccountValue, setTotalAccountValue] = useState<any>(null)
@@ -368,12 +369,20 @@ export default function Home() {
       loadSongHistory()
       loadSkills()
       loadWallet()
+      loadSolanaWallet()
       loadWalletBalances()
       loadTotalAccountValue()
       loadAssistants()
       loadTodos()
     }
   }, [isAuthenticated, showOnboarding, authToken])
+
+  // Load Solana wallet when solana view is active
+  useEffect(() => {
+    if (isAuthenticated && authToken && activeView === 'solana') {
+      loadSolanaWallet()
+    }
+  }, [activeView, isAuthenticated, authToken])
 
   // Refresh balances every 30 seconds
   useEffect(() => {
@@ -400,6 +409,41 @@ export default function Home() {
       }
     }
   }, [isAuthenticated, currentUser])
+
+  const loadSolanaWallet = async () => {
+    if (!authToken) return
+    setLoadingWallet(true)
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/wallet/solana`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      })
+      setSolanaWallet(response.data)
+      
+      // Also try to load tokens and NFTs
+      try {
+        const tokensRes = await axios.get(`${API_BASE_URL}/api/wallet/solana/tokens`, {
+          headers: { Authorization: `Bearer ${authToken}` }
+        })
+        setWalletTokens(tokensRes.data.tokens || [])
+      } catch (error) {
+        console.error('Failed to load Solana tokens:', error)
+      }
+      
+      try {
+        const nftsRes = await axios.get(`${API_BASE_URL}/api/wallet/solana/nfts`, {
+          headers: { Authorization: `Bearer ${authToken}` }
+        })
+        setWalletNfts(nftsRes.data.nfts || [])
+      } catch (error) {
+        console.error('Failed to load Solana NFTs:', error)
+      }
+    } catch (error) {
+      console.error('Failed to load Solana wallet:', error)
+      setSolanaWallet(null)
+    } finally {
+      setLoadingWallet(false)
+    }
+  }
 
   const loadWallet = async () => {
     if (!authToken) return
@@ -4614,16 +4658,229 @@ export default function Home() {
             </div>
             ) : activeView === 'solana' ? (
               <div className="space-y-6">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#14F195] to-[#9945FF] flex items-center justify-center">
-                    <div className="w-6 h-6 rounded-full bg-white" />
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-semibold text-[#1d1d1f]">Solana Wallet</h2>
-                    <p className="text-sm text-[#86868b]">SOL and token balances</p>
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#14F195] to-[#9945FF] flex items-center justify-center">
+                      <div className="w-6 h-6 rounded-full bg-white" />
+                    </div>
+                    <div>
+                      <h2 className="text-2xl font-semibold text-[#1d1d1f]">Solana Wallet</h2>
+                      <p className="text-sm text-[#86868b]">SOL and token balances</p>
+                    </div>
                   </div>
                 </div>
-                <p className="text-[#86868b]">Solana wallet features coming soon...</p>
+
+                {/* Tabs */}
+                <div className="flex gap-2 border-b border-[#e8e8ed]">
+                  <button
+                    onClick={() => setWalletTab('wallets')}
+                    className={`px-4 py-2 font-medium text-sm transition-all border-b-2 ${
+                      walletTab === 'wallets'
+                        ? 'text-[#14F195] border-[#14F195]'
+                        : 'text-[#86868b] border-transparent hover:text-[#1d1d1f]'
+                    }`}
+                  >
+                    Wallets
+                  </button>
+                  <button
+                    onClick={() => setWalletTab('tokens')}
+                    className={`px-4 py-2 font-medium text-sm transition-all border-b-2 ${
+                      walletTab === 'tokens'
+                        ? 'text-[#14F195] border-[#14F195]'
+                        : 'text-[#86868b] border-transparent hover:text-[#1d1d1f]'
+                    }`}
+                  >
+                    Tokens
+                  </button>
+                  <button
+                    onClick={() => setWalletTab('nfts')}
+                    className={`px-4 py-2 font-medium text-sm transition-all border-b-2 ${
+                      walletTab === 'nfts'
+                        ? 'text-[#14F195] border-[#14F195]'
+                        : 'text-[#86868b] border-transparent hover:text-[#1d1d1f]'
+                    }`}
+                  >
+                    NFTs
+                  </button>
+                </div>
+
+                {loadingWallet ? (
+                  <div className="flex items-center justify-center py-12">
+                    <Loader2 className="w-8 h-8 text-[#14F195] animate-spin" />
+                  </div>
+                ) : wallet ? (
+                  <>
+                    {walletTab === 'wallets' && (
+                      <div className="space-y-4">
+                        {/* Solana Wallet Card */}
+                        <div className="bg-white border border-[#e8e8ed] rounded-xl p-4">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <div className="w-8 h-8 rounded-lg bg-[#14F195]/10 flex items-center justify-center">
+                                <div className="w-4 h-4 rounded-full bg-[#14F195]" />
+                              </div>
+                              <h3 className="font-semibold text-[#1d1d1f]">SOL</h3>
+                            </div>
+                          </div>
+                          <div className="mb-3">
+                            <p className="text-xs text-[#86868b] mb-1">Address</p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-mono text-[#1d1d1f] truncate flex-1">
+                                {solanaWallet.address ? `${solanaWallet.address.substring(0, 8)}...${solanaWallet.address.substring(solanaWallet.address.length - 6)}` : 'No address'}
+                              </p>
+                              <button
+                                onClick={() => {
+                                  if (solanaWallet.address) {
+                                    navigator.clipboard.writeText(solanaWallet.address)
+                                    alert('Address copied!')
+                                  }
+                                }}
+                                className="p-1 hover:bg-[#f5f5f7] rounded transition-all"
+                                title="Copy address"
+                              >
+                                <Copy className="w-4 h-4 text-[#86868b]" />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                if (solanaWallet.address) {
+                                  window.open(`${API_BASE_URL}/api/wallet/qr-code/${solanaWallet.address}`, '_blank')
+                                }
+                              }}
+                              className="flex-1 px-3 py-2 text-xs bg-[#f5f5f7] hover:bg-[#e8e8ed] rounded-lg transition-all"
+                            >
+                              QR Code
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex gap-3">
+                          <button
+                            onClick={async () => {
+                              if (!authToken) return
+                              try {
+                                const response = await axios.get(`${API_BASE_URL}/api/wallet/solana`, {
+                                  headers: { Authorization: `Bearer ${authToken}` }
+                                })
+                                const walletData = response.data
+                                const blob = new Blob([JSON.stringify(walletData, null, 2)], { type: 'application/json' })
+                                const url = URL.createObjectURL(blob)
+                                const a = document.createElement('a')
+                                a.href = url
+                                a.download = 'solana_wallet.json'
+                                a.click()
+                                URL.revokeObjectURL(url)
+                              } catch (error: any) {
+                                alert(`Failed to download wallet: ${error.response?.data?.detail || error.message}`)
+                              }
+                            }}
+                            className="flex-1 px-4 py-3 rounded-xl bg-gradient-to-br from-[#007AFF] to-[#0051D5] text-white font-semibold hover:opacity-90 transition-all flex items-center justify-center gap-2"
+                          >
+                            <Download className="w-5 h-5" />
+                            Download Private Key
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (!authToken || !confirm('Are you sure you want to regenerate your Solana wallet? This will create a new wallet and you will lose access to the old one.')) return
+                              setRegeneratingWallet(true)
+                              try {
+                                await axios.post(`${API_BASE_URL}/api/wallet/solana/regenerate`, {}, {
+                                  headers: { Authorization: `Bearer ${authToken}` }
+                                })
+                                await loadSolanaWallet()
+                                alert('Wallet regenerated successfully!')
+                              } catch (error: any) {
+                                alert(`Failed to regenerate wallet: ${error.response?.data?.detail || error.message}`)
+                              } finally {
+                                setRegeneratingWallet(false)
+                              }
+                            }}
+                            disabled={regeneratingWallet}
+                            className="px-4 py-3 rounded-xl bg-white border border-[#e8e8ed] text-[#1d1d1f] font-semibold hover:bg-[#f5f5f7] transition-all flex items-center gap-2 disabled:opacity-50"
+                          >
+                            {regeneratingWallet ? (
+                              <Loader2 className="w-5 h-5 animate-spin" />
+                            ) : (
+                              <RefreshCw className="w-5 h-5" />
+                            )}
+                            Regenerate
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {walletTab === 'tokens' && (
+                      <div className="space-y-4">
+                        {loadingTokens ? (
+                          <div className="flex items-center justify-center py-12">
+                            <Loader2 className="w-8 h-8 text-[#14F195] animate-spin" />
+                          </div>
+                        ) : walletTokens.length === 0 ? (
+                          <div className="bg-white border border-[#e8e8ed] rounded-xl p-12 text-center">
+                            <p className="text-[#86868b]">No tokens found. Tokens will appear here when detected.</p>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {walletTokens.map((token: any) => (
+                              <div key={token.id} className="bg-white border border-[#e8e8ed] rounded-xl p-4">
+                                <div className="flex items-center gap-3 mb-2">
+                                  {token.image && (
+                                    <img src={token.image} alt={token.name} className="w-10 h-10 rounded-lg" />
+                                  )}
+                                  <div className="flex-1">
+                                    <p className="font-semibold text-[#1d1d1f]">{token.name}</p>
+                                    <p className="text-xs text-[#86868b]">{token.symbol}</p>
+                                  </div>
+                                </div>
+                                <p className="text-lg font-semibold text-[#1d1d1f]">{token.balance}</p>
+                                {token.value_usd && (
+                                  <p className="text-sm text-[#86868b]">${token.value_usd.toFixed(2)}</p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {walletTab === 'nfts' && (
+                      <div className="space-y-4">
+                        {loadingNfts ? (
+                          <div className="flex items-center justify-center py-12">
+                            <Loader2 className="w-8 h-8 text-[#14F195] animate-spin" />
+                          </div>
+                        ) : walletNfts.length === 0 ? (
+                          <div className="bg-white border border-[#e8e8ed] rounded-xl p-12 text-center">
+                            <p className="text-[#86868b]">No NFTs found. NFTs will appear here when detected.</p>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            {walletNfts.map((nft: any) => (
+                              <div key={nft.id} className="bg-white border border-[#e8e8ed] rounded-xl overflow-hidden">
+                                {nft.image && (
+                                  <img src={nft.image} alt={nft.name} className="w-full aspect-square object-cover" />
+                                )}
+                                <div className="p-3">
+                                  <p className="font-semibold text-[#1d1d1f] text-sm truncate">{nft.name}</p>
+                                  {nft.collection && (
+                                    <p className="text-xs text-[#86868b] truncate">{nft.collection}</p>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-center py-12">
+                    <p className="text-[#86868b]">Failed to load wallet</p>
+                  </div>
+                )}
               </div>
             ) : activeView === 'assistants' ? (
               <div className="space-y-6">
