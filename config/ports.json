@@ -1,0 +1,57 @@
+{
+  "basePort": 4199,
+  "apps": [
+    {
+      "id": "middleware",
+      "name": "Middleware",
+      "port": 4199,
+      "description": "API middleware layer connecting all apps",
+      "enabled": true,
+      "type": "middleware"
+    },
+    {
+      "id": "hub",
+      "name": "Central Hub",
+      "port": 4200,
+      "description": "Master dashboard for managing all AssisantAI apps",
+      "enabled": true,
+      "type": "frontend"
+    },
+    {
+      "id": "mvpassistant-backend",
+      "name": "MVP Assistant Backend",
+      "port": 4201,
+      "description": "MVP Assistant API backend",
+      "enabled": true,
+      "type": "backend"
+    },
+    {
+      "id": "personalai-backend",
+      "name": "PersonalAI Backend",
+      "port": 4202,
+      "description": "Base backend infrastructure - provides authentication, agent, and core services",
+      "enabled": true,
+      "type": "backend",
+      "path": "apps/personalai/backend",
+      "startCommand": "cd apps/personalai && ./start.sh"
+    },
+    {
+      "id": "personalai-frontend",
+      "name": "PersonalAI Frontend",
+      "port": 4203,
+      "description": "PersonalAI frontend dashboard",
+      "enabled": true,
+      "type": "frontend",
+      "path": "apps/personalai/frontend"
+    },
+    {
+      "id": "mvpassistant-frontend",
+      "name": "MVP Assistant Frontend",
+      "port": 4204,
+      "description": "MVP Assistant web interface",
+      "enabled": true,
+      "type": "frontend"
+    }
+  ]
+}
+

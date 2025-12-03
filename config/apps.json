@@ -1,0 +1,29 @@
+{
+  "apps": [
+    {
+      "id": "personalai",
+      "name": "PersonalAI",
+      "baseUrl": "http://localhost:4203",
+      "backendUrl": "http://localhost:4202",
+      "description": "Comprehensive local AI assistant with chat, image/video generation, song writing, and 20+ automation skills. Serves as the base backend for AssistantAI ecosystem.",
+      "enabled": true,
+      "isBaseBackend": true,
+      "path": "apps/personalai",
+      "installScript": "npm run install:backend && npm run install:frontend",
+      "startScript": "./start.sh"
+    },
+    {
+      "id": "mvpassistant",
+      "name": "MVP Assistant",
+      "baseUrl": "http://localhost:4204",
+      "backendUrl": "http://localhost:4201",
+      "description": "MVP Assistant - dynamically generates custom GUI applications to solve user problems. Sister app to PersonalAI in the AssistantAI ecosystem.",
+      "enabled": true,
+      "isBaseBackend": false,
+      "path": "apps/mvpassistant",
+      "installScript": "./INSTALL.sh",
+      "startScript": "./START.sh"
+    }
+  ]
+}
+

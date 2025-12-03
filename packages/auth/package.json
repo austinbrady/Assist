@@ -1,0 +1,21 @@
+{
+  "name": "@assisant-ai/auth",
+  "version": "1.0.0",
+  "description": "Unified authentication package for AssisantAI",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "jsonwebtoken": "^9.0.2",
+    "axios": "^1.6.2"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.5",
+    "@types/node": "^20.10.0",
+    "typescript": "^5.3.3"
+  }
+}
+

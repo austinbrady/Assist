@@ -1,0 +1,36 @@
+{
+  "name": "assisant-ai-master",
+  "version": "1.0.0",
+  "description": "Master project for unified AI assistant infrastructure",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "middleware",
+    "hub"
+  ],
+  "scripts": {
+    "install:all": "npm install && npm run install:packages && npm run install:apps",
+    "install:packages": "cd packages/auth && npm install && cd ../agent && npm install && cd ../port-manager && npm install && cd ../..",
+    "install:apps": "npm install --workspace=apps/*",
+    "start:middleware": "npm run start --workspace=middleware",
+    "dev:middleware": "npm run dev --workspace=middleware",
+    "start:hub": "npm run start --workspace=hub",
+    "dev:hub": "npm run dev --workspace=hub",
+    "start:all": "./start.sh",
+    "stop:all": "./stop.sh",
+    "analyze": "python tools/analyze_apps.py",
+    "register-app": "node scripts/register-app.js",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
+

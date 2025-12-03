@@ -1,0 +1,27 @@
+{
+  "name": "@assisant-ai/hub",
+  "version": "1.0.0",
+  "description": "Central hub dashboard for AssisantAI",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 4200 --no-open",
+    "build": "next build",
+    "start": "next start -p 4200",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "^14.0.4",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "axios": "^1.6.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "typescript": "^5.3.3",
+    "eslint": "^8.56.0",
+    "eslint-config-next": "^14.0.4"
+  }
+}
+

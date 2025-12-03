@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "PersonalAI",
+    "slug": "personalai-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#f5f5f7"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.jailbreakai.app",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Allow PersonalAI to access your photos for image editing and generation",
+        "NSPhotoLibraryAddUsageDescription": "Allow PersonalAI to save generated images to your photo library",
+        "NSCameraUsageDescription": "Allow PersonalAI to access your camera to take photos",
+        "NSMicrophoneUsageDescription": "Allow PersonalAI to access your microphone for audio features"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#f5f5f7"
+      },
+      "package": "com.jailbreakai.app"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}
+

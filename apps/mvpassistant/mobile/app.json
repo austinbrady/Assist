@@ -1,0 +1,115 @@
+{
+  "expo": {
+    "name": "MVP Assistant",
+    "slug": "mvp-assistant",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#6366f1"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mvpassistant.app",
+      "infoPlist": {
+        "NSContactsUsageDescription": "MVP Assistant needs access to your contacts to help manage relationships and communications.",
+        "NSCalendarsUsageDescription": "MVP Assistant needs access to your calendar to help schedule and manage your time.",
+        "NSLocationWhenInUseUsageDescription": "MVP Assistant uses your location to provide context-aware assistance.",
+        "NSLocationAlwaysUsageDescription": "MVP Assistant uses your location to provide context-aware assistance.",
+        "NSCameraUsageDescription": "MVP Assistant needs camera access to help with visual tasks and document scanning.",
+        "NSPhotoLibraryUsageDescription": "MVP Assistant needs photo library access to help organize and manage your media.",
+        "NSMicrophoneUsageDescription": "MVP Assistant needs microphone access for voice commands and dictation.",
+        "NSMotionUsageDescription": "MVP Assistant uses motion sensors to understand your activity and provide better assistance.",
+        "NSHealthShareUsageDescription": "MVP Assistant can access health data to provide personalized wellness insights.",
+        "NSHealthUpdateUsageDescription": "MVP Assistant can update health data to track your wellness goals.",
+        "NSRemindersUsageDescription": "MVP Assistant needs access to reminders to help manage your tasks.",
+        "NSBluetoothAlwaysUsageDescription": "MVP Assistant uses Bluetooth to connect with nearby devices.",
+        "NSBluetoothPeripheralUsageDescription": "MVP Assistant uses Bluetooth to connect with nearby devices."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#6366f1"
+      },
+      "package": "com.mvpassistant.app",
+      "permissions": [
+        "android.permission.READ_CONTACTS",
+        "android.permission.WRITE_CONTACTS",
+        "android.permission.READ_CALENDAR",
+        "android.permission.WRITE_CALENDAR",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.ACTIVITY_RECOGNITION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.WAKE_LOCK",
+        "android.permission.VIBRATE",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.READ_PHONE_STATE",
+        "android.permission.READ_SMS",
+        "android.permission.SEND_SMS",
+        "android.permission.RECEIVE_SMS"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Allow MVP Assistant to access your contacts."
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Allow MVP Assistant to access your calendar."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow MVP Assistant to use your location."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow MVP Assistant to access your camera."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "sounds": ["./assets/notification.wav"]
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "mvp-assistant-project"
+      }
+    }
+  }
+}
+

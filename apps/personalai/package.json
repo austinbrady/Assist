@@ -1,0 +1,24 @@
+{
+  "name": "personalai",
+  "version": "1.0.0",
+  "description": "PersonalAI - Comprehensive local AI assistant with chat, image/video generation, song writing, and 20+ automation skills",
+  "private": true,
+  "scripts": {
+    "install:backend": "cd backend && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt",
+    "install:frontend": "cd frontend && npm install",
+    "install:all": "npm run install:backend && npm run install:frontend",
+    "start": "./START.sh",
+    "start:backend": "cd backend && source venv/bin/activate && uvicorn main:app --host 0.0.0.0 --port ${PERSONALAI_BACKEND_PORT:-4200}",
+    "start:frontend": "cd frontend && npm run dev -- -p ${PERSONALAI_FRONTEND_PORT:-4201} -H 0.0.0.0",
+    "build": "cd frontend && npm run build"
+  },
+  "keywords": [
+    "ai",
+    "assistant",
+    "local",
+    "personalai",
+    "assistantai"
+  ],
+  "author": "",
+  "license": "PRIVATE"
+}
