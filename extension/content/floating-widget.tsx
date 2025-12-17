@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { createRoot } from 'react-dom/client';
+import { createRoot, Root } from 'react-dom/client';
 import { PageContext } from './context-extractor';
 
 interface Message {
@@ -28,8 +28,7 @@ export function FloatingWidget({ pageContext, suggestedActions, onClose }: Float
   const [autoContextEnabled, setAutoContextEnabled] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const widgetRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState({ x: window.innerWidth - 420, y: 100 });
+  const [position, setPosition] = useState({ x: Math.max(0, window.innerWidth - 420), y: 100 });
   const [isDragging, setIsDragging] = useState(false);
   const dragStartRef = useRef({ x: 0, y: 0 });
 
@@ -72,15 +71,12 @@ export function FloatingWidget({ pageContext, suggestedActions, onClose }: Float
 
     try {
       // Build message with context if enabled
-      let messageToSend = userInputText;
-      if (autoContextEnabled && pageContext) {
-        // Context will be added by background script
-      }
+      // Context will be added by background script automatically
 
       const response = await chrome.runtime.sendMessage({
         type: 'SEND_MESSAGE',
         payload: {
-          message: messageToSend,
+          message: userInputText,
           conversation_id: 'extension-chat',
           pageContext: autoContextEnabled ? pageContext : undefined,
         },
@@ -125,33 +121,34 @@ export function FloatingWidget({ pageContext, suggestedActions, onClose }: Float
 
   // Drag handling
   const handleMouseDown = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('.chat-header')) {
+    const target = e.target as HTMLElement;
+    // Only allow dragging from header, not from buttons
+    if (target.closest('.chat-header') && !target.closest('button')) {
       setIsDragging(true);
       dragStartRef.current = {
         x: e.clientX - position.x,
         y: e.clientY - position.y,
       };
+      e.preventDefault();
     }
   };
 
   useEffect(() => {
+    if (!isDragging) return;
+
     const handleMouseMove = (e: MouseEvent) => {
-      if (isDragging) {
-        setPosition({
-          x: e.clientX - dragStartRef.current.x,
-          y: e.clientY - dragStartRef.current.y,
-        });
-      }
+      setPosition({
+        x: Math.max(0, Math.min(e.clientX - dragStartRef.current.x, window.innerWidth - 400)),
+        y: Math.max(0, Math.min(e.clientY - dragStartRef.current.y, window.innerHeight - 100)),
+      });
     };
 
     const handleMouseUp = () => {
       setIsDragging(false);
     };
 
-    if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-    }
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
 
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
@@ -161,10 +158,12 @@ export function FloatingWidget({ pageContext, suggestedActions, onClose }: Float
 
   const widgetStyle: React.CSSProperties = {
     position: 'fixed',
-    left: `${position.x}px`,
-    top: `${position.y}px`,
+    left: `${Math.max(0, Math.min(position.x, window.innerWidth - 400))}px`,
+    top: `${Math.max(0, Math.min(position.y, window.innerHeight - 100))}px`,
     width: '400px',
+    maxWidth: '90vw',
     height: isMinimized ? '60px' : '600px',
+    maxHeight: '90vh',
     backgroundColor: 'white',
     borderRadius: '12px',
     boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
@@ -176,7 +175,7 @@ export function FloatingWidget({ pageContext, suggestedActions, onClose }: Float
   };
 
   return (
-    <div ref={widgetRef} style={widgetStyle} onMouseDown={handleMouseDown}>
+    <div style={widgetStyle} onMouseDown={handleMouseDown}>
       <div className="chat-header" style={{
         padding: '12px 16px',
         borderBottom: '1px solid #e5e7eb',
@@ -403,6 +402,7 @@ export function FloatingWidget({ pageContext, suggestedActions, onClose }: Float
 
 /**
  * Initialize widget when script loads
+ * This function is called when the widget bundle is loaded
  */
 function initializeWidget() {
   // Find container or create it
@@ -410,7 +410,19 @@ function initializeWidget() {
   if (!container) {
     container = document.createElement('div');
     container.id = 'assist-floating-widget';
-    document.body.appendChild(container);
+    if (document.body) {
+      document.body.appendChild(container);
+    } else {
+      // Wait for body to be available
+      const observer = new MutationObserver(() => {
+        if (document.body) {
+          document.body.appendChild(container!);
+          observer.disconnect();
+        }
+      });
+      observer.observe(document.documentElement, { childList: true });
+      return;
+    }
   }
 
   // Get context from data attribute or event
@@ -452,26 +464,42 @@ function initializeWidget() {
   }) as EventListener);
 
   function renderWidget() {
+    if (!container) return;
+    
     // Clear existing React root if any
-    const existingRoot = (container as any)._reactRoot;
+    const existingRoot = (container as any)._reactRoot as Root | undefined;
     if (existingRoot) {
-      existingRoot.unmount();
+      try {
+        existingRoot.unmount();
+      } catch (e) {
+        // Ignore unmount errors
+      }
     }
 
     // Render React component
-    const root = createRoot(container!);
-    (container as any)._reactRoot = root;
-    
-    root.render(
-      <FloatingWidget
-        pageContext={pageContext}
-        suggestedActions={suggestedActions}
-        onClose={() => {
-          container?.remove();
-          root.unmount();
-        }}
-      />
-    );
+    try {
+      const root = createRoot(container);
+      (container as any)._reactRoot = root;
+      
+      root.render(
+        React.createElement(FloatingWidget, {
+          pageContext: pageContext,
+          suggestedActions: suggestedActions,
+          onClose: () => {
+            if (container) {
+              container.remove();
+            }
+            try {
+              root.unmount();
+            } catch (e) {
+              // Ignore unmount errors
+            }
+          }
+        })
+      );
+    } catch (error) {
+      console.error('Failed to render widget:', error);
+    }
   }
 
   // Initial render if we have context
@@ -481,8 +509,10 @@ function initializeWidget() {
 }
 
 // Auto-initialize when script loads
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initializeWidget);
-} else {
-  initializeWidget();
+if (typeof window !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeWidget);
+  } else {
+    initializeWidget();
+  }
 }

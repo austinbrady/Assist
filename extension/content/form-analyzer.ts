@@ -2,17 +2,9 @@
  * Form Analyzer - Detects and extracts form fields with metadata
  */
 
-export interface FormField {
-  id: string;
-  type: string;
-  name?: string;
-  label?: string;
-  placeholder?: string;
-  value?: string;
-  required?: boolean;
-  selector: string;
-  element: HTMLElement;
-}
+import { FormField } from './types';
+
+export type { FormField };
 
 export interface FormAnalysis {
   forms: FormData[];
@@ -64,9 +56,17 @@ class FormAnalyzer {
     const formElements = form.querySelectorAll('input, textarea, select');
 
     formElements.forEach((element, index) => {
-      const field = this.extractFieldMetadata(element as HTMLElement, index);
-      if (field) {
+      const tagName = element.tagName.toLowerCase();
+      // Skip hidden fields before processing
+      if (tagName === 'input' && (element as HTMLInputElement).type === 'hidden') {
+        return;
+      }
+      
+      try {
+        const field = this.extractFieldMetadata(element as HTMLElement, index);
         fields.push(field);
+      } catch (error) {
+        console.warn('Skipping field due to error:', error);
       }
     });
 
@@ -76,13 +76,7 @@ class FormAnalyzer {
   /**
    * Extract metadata for a single form field
    */
-  private extractFieldMetadata(element: HTMLElement, index: number): FormField | null {
-    const tagName = element.tagName.toLowerCase();
-    
-    // Skip hidden fields
-    if (tagName === 'input' && (element as HTMLInputElement).type === 'hidden') {
-      return null;
-    }
+  private extractFieldMetadata(element: HTMLElement, index: number): FormField {
 
     const id = element.id || `field-${index}`;
     const inputElement = element as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
@@ -248,7 +242,8 @@ class FormAnalyzer {
         return null;
       }
 
-      return this.extractFieldMetadata(element, 0);
+      const field = this.extractFieldMetadata(element, 0);
+      return field;
     } catch (error) {
       console.error('Error getting field by selector:', error);
       return null;

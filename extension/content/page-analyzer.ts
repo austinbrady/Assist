@@ -2,6 +2,18 @@
  * Page Analyzer - Analyzes ALL page content (text, images, videos, structure)
  */
 
+import { ImageMetadata, VideoMetadata, FormField } from './types';
+
+export type PageType = 
+  | 'social-media' 
+  | 'video' 
+  | 'article' 
+  | 'form' 
+  | 'messaging' 
+  | 'gaming' 
+  | 'e-commerce'
+  | 'other';
+
 export interface PageAnalysis {
   pageType: PageType;
   primaryContent: string;
@@ -14,45 +26,6 @@ export interface PageAnalysis {
   metadata: PageMetadata;
 }
 
-export type PageType = 
-  | 'social-media' 
-  | 'video' 
-  | 'article' 
-  | 'form' 
-  | 'messaging' 
-  | 'gaming' 
-  | 'e-commerce'
-  | 'other';
-
-export interface ImageMetadata {
-  src: string;
-  alt?: string;
-  title?: string;
-  width?: number;
-  height?: number;
-  description?: string;
-}
-
-export interface VideoMetadata {
-  platform: 'youtube' | 'vimeo' | 'twitch' | 'other';
-  url?: string;
-  title?: string;
-  description?: string;
-  currentTime?: number;
-  duration?: number;
-  videoId?: string;
-}
-
-export interface FormField {
-  id: string;
-  type: string;
-  name?: string;
-  label?: string;
-  placeholder?: string;
-  value?: string;
-  required?: boolean;
-  selector: string;
-}
 
 export interface PageStructure {
   title: string;
@@ -386,6 +359,7 @@ class PageAnalyzer {
         value,
         required,
         selector: this.generateSelector(element),
+        element: element as HTMLElement, // Include element for content script use
       });
     });
 

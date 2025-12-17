@@ -106,26 +106,36 @@ async function handleGetConfig() {
 
 async function handleRequestAutofillSuggestions(payload: any) {
   try {
+    if (!payload || !payload.fields || !Array.isArray(payload.fields)) {
+      return { suggestions: [], error: 'Invalid payload' };
+    }
+
     // Forward to API client for AI analysis
     const response = await apiClient.sendMessage({
-      message: `Analyze this form and suggest values for the fields. Fields: ${JSON.stringify(payload.fields)}. Page context: ${JSON.stringify(payload.pageContext)}`,
+      message: `Analyze this form and suggest values for the fields. Fields: ${JSON.stringify(payload.fields)}. Page context: ${JSON.stringify(payload.pageContext || {})}`,
       conversation_id: 'autofill-suggestions',
       pageContext: payload.pageContext,
     });
 
     // Parse response to extract suggestions
     // This is a simplified version - in production, the backend should return structured suggestions
+    // For now, return empty array - backend response parsing can be added later
     return {
       suggestions: [], // Will be populated by backend response parsing
     };
   } catch (error) {
     console.error('Error requesting autofill suggestions:', error);
-    return { suggestions: [] };
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return { suggestions: [], error: errorMessage };
   }
 }
 
 async function handleAnalyzeImage(payload: any) {
   try {
+    if (!payload || !payload.imageBase64) {
+      return { error: 'Missing image data' };
+    }
+
     // Forward image analysis to backend
     const status = apiClient.getConnectionStatus();
     const config = await chrome.storage.sync.get(['apiConfig']);
@@ -152,13 +162,15 @@ async function handleAnalyzeImage(payload: any) {
 
     if (response.ok) {
       const data = await response.json();
-      return { description: data.description || data.response };
+      return { description: data.description || data.response || 'Image analyzed' };
     }
 
-    return { error: 'Failed to analyze image' };
+    const errorText = await response.text().catch(() => '');
+    return { error: `Failed to analyze image: ${response.status} ${errorText}` };
   } catch (error) {
     console.error('Error analyzing image:', error);
-    return { error: 'Failed to analyze image' };
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return { error: `Failed to analyze image: ${errorMessage}` };
   }
 }
 

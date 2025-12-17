@@ -1,0 +1,11 @@
+
+Unzip PackagedFiles. It will be a .txt file with some assets you need to change, starting with your Google API Key.
+Don't get stressed out though, this is about as easy as it gets. Simply, go to https://aistudio.google.com/, login with your google account.
+Once you're logged in, click Create API Key, type in Assist, then copy your API key into PackagedFiles.txt.
+Once you've added your Google API Key, save the document.
+Close out of your application. Quit it all the way, dont just close the window.
+Rename the file .env, press "use .env" and your API Key will be saved to the project.
+
+This will allow you to leverage both Ollama and Gemini for your API for maximizing its capabilities. 
+If you do not add your own API Key to Assist, it will still work, just not as well.
+

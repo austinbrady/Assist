@@ -1,0 +1,19 @@
+{
+  "name": "AssisantAI Devcontainer",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:18",
+  "forwardPorts": [4199, 4200, 4201, 4202, 4203, 4204, 4205, 4206],
+  "extensions": [
+    "GitHub.copilot",
+    "GitHub.copilot-chat",
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode"
+  ],
+  "settings": {
+    "github.copilot.enable": true,
+    "github.copilot.inlineSuggest.enable": true,
+    "editor.inlineSuggest.enabled": true,
+    "editor.formatOnSave": true
+  },
+  "postCreateCommand": "echo 'To finish setup run: ./install.sh (optional heavy). You can also run npm install --workspaces'",
+  "remoteUser": "vscode"
+}

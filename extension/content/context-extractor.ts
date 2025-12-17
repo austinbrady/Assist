@@ -3,6 +3,7 @@
  */
 
 import { PageAnalysis, PageType } from './page-analyzer';
+import { ImageMetadata, VideoMetadata, FormField } from './types';
 
 export interface PageContext {
   pageType: PageType;
@@ -17,28 +18,6 @@ export interface PageContext {
   timestamp: Date;
 }
 
-export interface ImageMetadata {
-  src: string;
-  alt?: string;
-  description?: string;
-}
-
-export interface VideoMetadata {
-  platform: string;
-  title?: string;
-  description?: string;
-  currentTime?: number;
-}
-
-export interface FormField {
-  id: string;
-  type: string;
-  name?: string;
-  label?: string;
-  placeholder?: string;
-  value?: string;
-  required?: boolean;
-}
 
 export interface ContextSummary {
   summary: string;

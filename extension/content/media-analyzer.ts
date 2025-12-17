@@ -2,19 +2,13 @@
  * Media Analyzer - Analyzes images and videos on page
  */
 
+import { ImageMetadata, VideoMetadata } from './types';
+
 export interface ImageAnalysis {
   src: string;
   description?: string;
   textContent?: string; // OCR text if any
   metadata?: ImageMetadata;
-}
-
-export interface ImageMetadata {
-  src: string;
-  alt?: string;
-  title?: string;
-  width?: number;
-  height?: number;
 }
 
 export interface VideoAnalysis {
@@ -25,12 +19,6 @@ export interface VideoAnalysis {
   duration?: number;
   transcript?: string;
   metadata?: VideoMetadata;
-}
-
-export interface VideoMetadata {
-  platform: 'youtube' | 'vimeo' | 'twitch' | 'other';
-  url?: string;
-  videoId?: string;
 }
 
 class MediaAnalyzer {

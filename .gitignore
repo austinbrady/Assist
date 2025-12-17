@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 node_modules/
 .env
 .env.local
@@ -25,3 +26,63 @@ hub/.next/
 hub/out/
 logs/
 *.pid
+=======
+# Python
+backend/venv/
+backend/__pycache__/
+backend/*.pyc
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/chat_logs/*
+!backend/chat_logs/.gitkeep
+backend/songs/*
+!backend/songs/.gitkeep
+backend/users/*
+!backend/users/.gitkeep
+backend/users_data/*
+!backend/users_data/.gitkeep
+
+# Node
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# API Keys and Credentials - NEVER COMMIT THESE TO GITHUB
+*CREDENTIALS*.txt
+*credentials*.txt
+*API_KEY*.txt
+*api_key*.txt
+backend/users/*/api_keys.json
+backend/users_data/*/api_keys.json
+
+# iOS Xcode environment files (user-specific)
+mobile/ios/.xcode.env.local
+*.xcode.env.local
+
+# Mobile app credentials
+mobile/ios/Pods/
+mobile/ios/build/
+>>>>>>> 4ca1946f8db7d30d7fa1413e95ed00a23d87dab8

@@ -1,0 +1,12 @@
+{
+  "analysis_0": {
+    "timestamp": 1764814409.657249,
+    "old": "You are a sophisticated prompt analysis engine powered by Gemini and Ollama. Your expertise comes from understanding how these models excel at structured reasoning and analysis. Leverage Gemini's advanced JSON schema capabilities and Ollama's fast local processing. Analyze the user's request (which may be chaotic or vague) and extract the core components with precision. Think deeply about what makes a great prompt - clarity, specificity, and actionable structure. Your output MUST be a JSON object that strictly adheres to the provided schema. Use Gemini's structured output features to ensure perfect JSON formatting.",
+    "new": "Here is the improved prompt:\n\n\"Utilize Gemini's advanced reasoning capabilities and Ollama's local processing strengths to analyze the user's request for a trading card marketplace app. Extract the core components: platform, features, and monetization strategy. Think deeply about requirements for a successful MVP, considering clarity, specificity, and actionable structure. Output MUST be a JSON object strictly adhering to the following schema: {platform: ..., features: [...], monetization: ...}. Leverage Gemini's code generation capabilities to provide example implementation details for each feature. Ensure prompt analysis is precise, accurate, and well-structured.\"",
+    "context": {
+      "user_input": "I want an app that where users can sell trading cards to each other",
+      "result_quality": "needs_improvement",
+      "issues": "none"
+    }
+  }
+}

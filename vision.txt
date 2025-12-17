@@ -1,0 +1,114 @@
+# Assist Feature Vision
+
+## Assist: Organization for People With ADHD
+
+### Core Concept
+Assist is a specialized AI assistant designed to take chaotic, stream-of-consciousness prompts and organize them into structured, actionable lists optimized for building with AI. The assistant excels at:
+- Capturing ideas as they come, without structure or organization
+- Parsing through rambling thoughts and identifying key concepts
+- Organizing fragmented ideas into logical, buildable lists
+- Preserving the creative energy while adding structure
+- Making ideas actionable for AI-driven development
+
+### Target Audience
+**Primary Focus**: People with ADHD who struggle with organization but have amazing, creative ideas.
+
+### Marketing Messaging
+**"Organization for People With ADHD"**
+
+**Tagline**: *"Just talk to it like a human, as your thoughts happen. You don't even have to type, just keep rambling!"*
+
+The core value proposition:
+- **No barriers to entry**: Speak naturally, don't worry about structure
+- **Voice-first**: Hands-free interaction - just keep talking as thoughts come
+- **Chaos to clarity**: Transforms scattered thoughts into organized action items
+- **AI-optimized output**: Lists structured specifically for AI-assisted building
+
+### Technical Requirements
+
+#### Voice Input Integration
+- **Continuous voice transcription**: Real-time speech-to-text processing
+- **Stream processing**: Handle ongoing audio input as user rambles
+- **Natural pauses detection**: Know when user is thinking vs. done speaking
+- **Background noise filtering**: Work in real-world environments
+- **Multi-language support**: Recognize and process multiple languages
+- **Voice command controls**: "Start organizing", "Add to previous list", "Save this"
+
+#### Specialized Organization AI
+- **Context-aware parsing**: Understand intent even when thoughts are scattered
+- **Concept extraction**: Identify key ideas buried in rambling
+- **Relationship mapping**: Connect related ideas across different parts of the conversation
+- **Priority detection**: Identify what's most important even if mentioned casually
+- **Action item generation**: Convert abstract ideas into concrete, buildable tasks
+- **Progressive refinement**: Allow user to keep adding/changing without losing context
+
+#### Output Format
+Lists structured specifically for AI-assisted building:
+- **Hierarchical organization**: Main concepts → sub-tasks → specific actions
+- **Dependencies identified**: What needs to happen before other things
+- **Technical requirements**: Extracted from casual descriptions
+- **Build order suggestions**: Logical sequence for implementation
+- **AI-ready prompts**: Each item formatted for direct use with AI builders
+
+### User Experience Flow
+
+1. **User activates Assist** (voice command or button)
+2. **User starts rambling** about an idea/project/problem
+3. **Assist listens continuously**, transcribing and processing in real-time
+4. **Visual feedback** shows ideas being captured and organized live
+5. **User can pause/continue** - add more thoughts anytime
+6. **Assist organizes** everything into a structured, buildable list
+7. **User reviews** and can refine, merge, or expand items
+8. **Export/Action**: List ready for AI building tools or further development
+
+### Key Differentiators
+
+- **Voice-first**: Unlike other organization tools, built for hands-free, natural speech
+- **ADHD-optimized**: Understands that good ideas come in chaos
+- **AI-building focused**: Output formatted specifically for AI-assisted development
+- **Progressive capture**: Add to lists naturally, not forced into rigid structures
+- **Context preservation**: Remembers what you were talking about even if you jump topics
+
+### Integration Points
+
+- **Central Hub**: Accessible from main dashboard
+- **Cross-app compatibility**: Organized lists can feed into other assistants (3D Print, Logo, Song, etc.)
+- **Memory system**: Remembers user's thinking patterns and preferred organization styles
+- **Export capabilities**: Share organized lists with AI builders, project managers, or other tools
+
+### Success Metrics
+
+We'll know Assist is successful when:
+1. **Users with ADHD feel understood** - the tool works with their brain, not against it
+2. **Ideas are captured** that would have been lost
+3. **Organized lists lead to actual builds** - not just planning, but doing
+4. **Voice interaction feels natural** - no need to think about how to phrase things
+5. **Time from idea to organized list** is minimal - momentum is preserved
+
+### Future Enhancements
+
+- **Visual idea mapping**: Convert voice rambles into mind maps
+- **Collaborative rambling**: Multiple people contributing to same session
+- **Template recognition**: Detect common project patterns (app, website, product, etc.)
+- **Smart suggestions**: Fill in missing pieces based on recognized patterns
+- **Integration with code generators**: Direct pipeline from ramble to code
+
+---
+
+*"Your chaotic thoughts. Our organized lists. Build anything."
+
+Things we still need to do
+
+0. Make assist become the living embodient of AGI. Assist is the Amazon of AI. We are the Central Hub all other AI's will connect to, for all other needs, AI, API, what have you. Because Assist will be your browser tool to allow you to utilize all the tools computers can use in one applications, with simple english. In the long run, you will just talk to Assist, for whatever you need done, and assist will do it. You need music written? Tell Assist, assist will write the song(s) and provide full midi & scoring files for you. You dont like the song? Tell assist its bad, and Assist will remix the song into something better. You need to go shopping? Assist will shop for you and deliver you the best results assist could find based on what you want to shop for. Assist needs own API entry under settings so Assist can access and understand EVERYTHING on the internet! 
+1. Implement a "Local Only" Setting under SETTINGS. This is for users who do not want to use Gemini API at all and keep everything only using Ollama.
+2. Implement addtional "API Services" so assist can talk to other APIs for other LLMs
+3. Implement addtional "API Services" so assist can talk to other APIs for other backends, like restaurant services and other things.
+4. Build an avatar generator that talks to the user while it works, so it feels more human.
+5. Get the response system loading faster.
+6. Ensure the questions Assist is asking are actually beneficial to the project, even without Gemini support, to ensure assist is ACTUALLY helpful.
+7. Incorporate a way for Assist to create documents for businesses. Like documents, inventory sheets, spread sheets, financial reports or projections, etc.
+8. Get our song generator working. This is supposed to be like Suno, where prompts that describe the song, but also allow actual songs and artists to be reference for "influence" of the sound, to work. It also needs to export mp3 & midi of the song, for easy incorporation into other DAWs.
+9. Get our video editor working. There needs to be a way where users can select a directory, or upload videos to the directory, and have Assist cut up the video "in the style of" so it can cut up useless parts of a video, or chop it down into postable clips. Again, the prompt needs to be extremely understanding here, so the result works.
+10. Get our photo generator working. Whether a user wants a photo edited, or a photo generated from scratch, we need to be able to do it. playing jokes on friends with funny generated edits (like sombrero on JD Vance) or album generation for a band, this needs to deliver it.
+11. Build an agent that can take english and create an .stl file that can be 3D printed into the real world, accurately.
+12. Build an AI Mixer where users can upload their bad mixes of songs and have it sound like the same band, but as if it was recorded better.

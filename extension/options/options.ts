@@ -40,7 +40,7 @@ async function loadSettings() {
   const confidence = result.autofillConfidence || 90;
   (document.getElementById('autofillConfidence') as HTMLInputElement).value = 
     confidence.toString();
-  (document.getElementById('confidenceValue')!.textContent = `${confidence}%`;
+  document.getElementById('confidenceValue')!.textContent = `${confidence}%`;
 
   // Activity settings
   (document.getElementById('socialMediaAssistance') as HTMLInputElement).checked = 

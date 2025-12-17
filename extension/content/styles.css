@@ -1,5 +1,17 @@
 /* Extension styles */
 
+/* Typing animation */
+@keyframes typing {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.7;
+  }
+  30% {
+    transform: translateY(-10px);
+    opacity: 1;
+  }
+}
+
 /* Autofill indicators */
 .assist-autofilled {
   border: 2px solid #667eea !important;

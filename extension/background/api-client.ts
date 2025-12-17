@@ -2,6 +2,8 @@
  * API Client with local-first, cloud-fallback connection strategy
  */
 
+import { ImageMetadata, VideoMetadata, FormField } from '../content/types';
+
 export interface ApiConfig {
   localBackendUrl: string;
   cloudBackendUrl?: string;
@@ -31,31 +33,8 @@ export interface PageContext {
   forms?: FormData[];
 }
 
-export interface ImageMetadata {
-  src: string;
-  alt?: string;
-  description?: string;
-}
-
-export interface VideoMetadata {
-  platform: string;
-  title?: string;
-  description?: string;
-  currentTime?: number;
-}
-
 export interface FormData {
   fields: FormField[];
-}
-
-export interface FormField {
-  id: string;
-  type: string;
-  name?: string;
-  label?: string;
-  placeholder?: string;
-  value?: string;
-  required?: boolean;
 }
 
 export interface ChatResponse {
@@ -71,7 +50,7 @@ class ApiClient {
     backend: null,
     lastCheck: new Date(0),
   };
-  private healthCheckInterval: number | null = null;
+  private healthCheckInterval: ReturnType<typeof setInterval> | null = null;
   private token: string | null = null;
 
   constructor(config: ApiConfig) {
@@ -302,7 +281,8 @@ class ApiClient {
       clearInterval(this.healthCheckInterval);
     }
 
-    this.healthCheckInterval = window.setInterval(() => {
+    // Use global setInterval (works in both window and service worker contexts)
+    this.healthCheckInterval = setInterval(() => {
       this.checkConnection();
     }, intervalMs);
   }

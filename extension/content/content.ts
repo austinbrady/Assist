@@ -9,7 +9,7 @@ import { formAnalyzer } from './form-analyzer';
 
 let widgetContainer: HTMLElement | null = null;
 let currentContext: PageContext | null = null;
-let pageAnalysisInterval: number | null = null;
+let pageAnalysisInterval: ReturnType<typeof setTimeout> | null = null;
 
 /**
  * Inject floating widget by loading the widget bundle
@@ -28,9 +28,28 @@ async function injectFloatingWidget(pageContext?: PageContext, suggestedActions?
 
   // Load widget bundle script
   return new Promise((resolve, reject) => {
+    // Check if script already loaded
+    if ((window as any).__assistWidgetLoaded) {
+      // Widget already loaded, just trigger init
+      if (pageContext) {
+        container.setAttribute('data-context', JSON.stringify(pageContext));
+      }
+      if (suggestedActions) {
+        container.setAttribute('data-actions', JSON.stringify(suggestedActions));
+      }
+      
+      const event = new CustomEvent('assist-init-widget', {
+        detail: { pageContext, suggestedActions }
+      });
+      container.dispatchEvent(event);
+      resolve(container);
+      return;
+    }
+
     const script = document.createElement('script');
     script.src = chrome.runtime.getURL('content/floating-widget.js');
     script.onload = () => {
+      (window as any).__assistWidgetLoaded = true;
       // Widget bundle will initialize itself
       // Pass context via data attributes
       if (pageContext) {
@@ -48,7 +67,9 @@ async function injectFloatingWidget(pageContext?: PageContext, suggestedActions?
       
       resolve(container);
     };
-    script.onerror = reject;
+    script.onerror = () => {
+      reject(new Error('Failed to load widget script'));
+    };
     (document.head || document.documentElement).appendChild(script);
   });
 }
@@ -94,9 +115,16 @@ async function initialize() {
 /**
  * Set up monitoring for page changes (SPA navigation, dynamic content)
  */
+let domObserver: MutationObserver | null = null;
+
 function setupPageMonitoring() {
+  // Clean up existing observer if any
+  if (domObserver) {
+    domObserver.disconnect();
+  }
+
   // Monitor DOM changes
-  const observer = new MutationObserver(() => {
+  domObserver = new MutationObserver(() => {
     // Debounce updates
     if (pageAnalysisInterval) {
       clearTimeout(pageAnalysisInterval);
@@ -107,19 +135,12 @@ function setupPageMonitoring() {
     }, 1000);
   });
 
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true,
-  });
-
-  // Monitor URL changes (for SPAs)
-  let lastUrl = window.location.href;
-  setInterval(() => {
-    if (window.location.href !== lastUrl) {
-      lastUrl = window.location.href;
-      updateContext();
-    }
-  }, 1000);
+  if (document.body) {
+    domObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+  }
 }
 
 /**
@@ -182,28 +203,36 @@ async function handleMessage(
 
     case 'REQUEST_AUTOFILL_SUGGESTIONS':
       // Request autofill suggestions
-      const formAnalysis = formAnalyzer.analyzeForms();
-      if (formAnalysis.forms.length > 0) {
-        // Send to background for AI analysis
-        chrome.runtime.sendMessage({
-          type: 'REQUEST_AUTOFILL_SUGGESTIONS',
-          payload: {
-            fields: formAnalysis.forms[0].fields.map(f => ({
-              id: f.id,
-              type: f.type,
-              label: f.label,
-              placeholder: f.placeholder,
-              name: f.name,
-              required: f.required,
-            })),
-            pageContext: currentContext,
-          },
-        }).then(response => {
-          sendResponse(response);
-        });
-        return true; // Keep channel open
-      } else {
-        sendResponse({ suggestions: [] });
+      try {
+        const formAnalysis = formAnalyzer.analyzeForms();
+        if (formAnalysis.forms.length > 0) {
+          // Send to background for AI analysis
+          chrome.runtime.sendMessage({
+            type: 'REQUEST_AUTOFILL_SUGGESTIONS',
+            payload: {
+              fields: formAnalysis.forms[0].fields.map(f => ({
+                id: f.id,
+                type: f.type,
+                label: f.label,
+                placeholder: f.placeholder,
+                name: f.name,
+                required: f.required,
+              })),
+              pageContext: currentContext,
+            },
+          }).then(response => {
+            sendResponse(response || { suggestions: [] });
+          }).catch(error => {
+            console.error('Error requesting autofill suggestions:', error);
+            sendResponse({ suggestions: [], error: error.message });
+          });
+          return true; // Keep channel open
+        } else {
+          sendResponse({ suggestions: [] });
+        }
+      } catch (error) {
+        console.error('Error analyzing forms:', error);
+        sendResponse({ suggestions: [], error: 'Failed to analyze forms' });
       }
       break;
 
@@ -219,13 +248,29 @@ if (document.readyState === 'loading') {
   initialize();
 }
 
-// Re-initialize on navigation (for SPAs)
-let lastUrl = window.location.href;
-const checkUrl = () => {
-  if (window.location.href !== lastUrl) {
-    lastUrl = window.location.href;
-    // Small delay to let page settle
-    setTimeout(initialize, 500);
-  }
-};
-setInterval(checkUrl, 1000);
+  // Re-initialize on navigation (for SPAs)
+  let lastUrl = window.location.href;
+  let urlCheckInterval: number | null = null;
+  
+  const checkUrl = () => {
+    if (window.location.href !== lastUrl) {
+      lastUrl = window.location.href;
+      // Small delay to let page settle
+      setTimeout(initialize, 500);
+    }
+  };
+  
+  urlCheckInterval = window.setInterval(checkUrl, 1000);
+  
+  // Cleanup on page unload
+  window.addEventListener('beforeunload', () => {
+    if (urlCheckInterval !== null) {
+      clearInterval(urlCheckInterval);
+    }
+    if (pageAnalysisInterval !== null) {
+      clearTimeout(pageAnalysisInterval);
+    }
+    if (domObserver) {
+      domObserver.disconnect();
+    }
+  });
