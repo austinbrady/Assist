@@ -24,7 +24,8 @@ export const authenticateToken = (
     return;
   }
 
-  const secret = process.env.JWT_SECRET || 'your-secret-key';
+  // Use SECRET_KEY to match PersonalAI backend, fallback to JWT_SECRET for compatibility
+  const secret = process.env.SECRET_KEY || process.env.JWT_SECRET || 'personal-ai-local-secret-key-change-in-production';
   
   jwt.verify(token, secret, (err, decoded) => {
     if (err) {
@@ -55,7 +56,8 @@ export const optionalAuth = (
   const token = authHeader && authHeader.split(' ')[1];
 
   if (token) {
-    const secret = process.env.JWT_SECRET || 'your-secret-key';
+    // Use SECRET_KEY to match PersonalAI backend, fallback to JWT_SECRET for compatibility
+    const secret = process.env.SECRET_KEY || process.env.JWT_SECRET || 'personal-ai-local-secret-key-change-in-production';
     jwt.verify(token, secret, (err, decoded) => {
       if (!err && decoded && typeof decoded === 'object') {
         req.userId = decoded.userId || decoded.sub;
