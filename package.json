@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "description": "Master project for unified AI assistant infrastructure",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/austinbrady/Assist.git"
+  },
   "workspaces": [
     "apps/*",
     "packages/*",
@@ -17,8 +21,8 @@
     "dev:middleware": "npm run dev --workspace=middleware",
     "start:hub": "npm run start --workspace=hub",
     "dev:hub": "npm run dev --workspace=hub",
-    "start:all": "./start.sh",
-    "stop:all": "./stop.sh",
+    "start:all": "./start",
+    "stop:all": "./stop",
     "analyze": "python tools/analyze_apps.py",
     "register-app": "node scripts/register-app.js",
     "build": "npm run build --workspaces",

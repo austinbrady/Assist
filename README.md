@@ -163,6 +163,10 @@ AssisantAI is designed to host many specialized AI assistants, each an expert in
 - [Integration Guide](docs/INTEGRATION_GUIDE.md) - How to integrate apps
 - [Vision](VISION.md) - Project vision and philosophy
 
+## Repository
+
+This project is hosted at: https://github.com/austinbrady/Assist
+
 ## License
 
 See [LICENSE](LICENSE) file for details.

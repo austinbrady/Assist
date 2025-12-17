@@ -4,9 +4,9 @@
   "description": "Central hub dashboard for AssisantAI",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 4200 --no-open",
+    "dev": "next dev -p 4200 -H 0.0.0.0",
     "build": "next build",
-    "start": "next start -p 4200",
+    "start": "next start -p 4200 -H 0.0.0.0",
     "lint": "next lint"
   },
   "dependencies": {

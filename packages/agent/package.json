@@ -10,11 +10,15 @@
   },
   "dependencies": {
     "@assisant-ai/learner": "*",
-    "axios": "^1.6.2"
+    "@langchain/community": "^1.0.6",
+    "@langchain/ollama": "^1.0.3",
+    "axios": "^1.6.2",
+    "chromadb": "^1.0.0",
+    "langchain": "^1.1.3",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
     "typescript": "^5.3.3"
   }
 }
-
