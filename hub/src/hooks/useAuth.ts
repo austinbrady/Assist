@@ -107,6 +107,13 @@ export function useAuth() {
       setUser(userData)
       localStorage.setItem('assisant_ai_token', newToken)
       localStorage.setItem('assisant_ai_user', JSON.stringify(userData))
+      
+      // Hard refresh to switch from generic "Assist" to user's Personal Character
+      // This ensures all variables, settings, and Character data are loaded fresh
+      setTimeout(() => {
+        window.location.reload()
+      }, 100)
+      
       return { success: true }
     } catch (error: any) {
       const errorMessage = error.response?.data?.detail || error.response?.data?.error || 'Login failed'
@@ -139,6 +146,14 @@ export function useAuth() {
       setUser(userData)
       localStorage.setItem('assisant_ai_token', newToken)
       localStorage.setItem('assisant_ai_user', JSON.stringify(userData))
+      
+      // Hard refresh to switch from generic "Assist" to user's Personal Character
+      // This ensures all variables, settings, and Character data are loaded fresh
+      // Character is created automatically during signup
+      setTimeout(() => {
+        window.location.reload()
+      }, 100)
+      
       return { success: true }
     } catch (error: any) {
       const errorMessage = error.response?.data?.detail || error.response?.data?.error || 'Signup failed'

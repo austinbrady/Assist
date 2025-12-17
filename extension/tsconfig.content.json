@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist/content",
+    "types": ["chrome"]
+  },
+  "include": ["content/**/*.ts", "content/**/*.tsx"]
+}

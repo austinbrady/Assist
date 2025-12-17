@@ -1,0 +1,29 @@
+{
+  "name": "@assisant-ai/extension",
+  "version": "1.0.0",
+  "description": "Browser extension for AssisantAI",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "npm run build:background && npm run build:widget && npm run build:content && npm run build:popup && npm run build:options && npm run copy:assets",
+    "build:background": "tsc --project tsconfig.background.json && esbuild background/background.ts --bundle --outfile=dist/background/background.js --format=esm --platform=browser --target=es2020 --external:chrome",
+    "build:widget": "esbuild content/floating-widget.tsx --bundle --outfile=dist/content/floating-widget.js --format=iife --platform=browser --target=es2020 --jsx=automatic --inject:./content/react-shim.js",
+    "build:content": "tsc --project tsconfig.content.json && esbuild content/content.ts --bundle --outfile=dist/content/content.js --format=iife --platform=browser --target=es2020 --external:react --external:react-dom",
+    "build:popup": "tsc --project tsconfig.popup.json && esbuild popup/popup.ts --bundle --outfile=dist/popup/popup.js --format=iife --platform=browser --target=es2020",
+    "build:options": "tsc --project tsconfig.options.json && esbuild options/options.ts --bundle --outfile=dist/options/options.js --format=iife --platform=browser --target=es2020",
+    "copy:assets": "mkdir -p dist/assets && cp -r assets/* dist/assets/ 2>/dev/null || true && cp content/styles.css dist/content/styles.css",
+    "dev": "npm run build",
+    "package": "npm run build && zip -r extension.zip dist/ manifest.json assets/"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.251",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "esbuild": "^0.19.0",
+    "typescript": "^5.3.3"
+  }
+}

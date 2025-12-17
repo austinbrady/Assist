@@ -9,6 +9,24 @@
 
 import { Learner } from '@assisant-ai/learner';
 
+// Export unified LLM agent functions
+export {
+  processUserMessage,
+  getModelConfig,
+  getAvailableModels,
+  initializeRAG,
+  type ProcessMessageOptions,
+  type ProcessMessageResponse
+} from './agent';
+
+// Export schemas
+export {
+  InsightSchema,
+  InsightsArraySchema,
+  type Insight,
+  type InsightsArray
+} from './schemas';
+
 export interface AgentMessage {
   message: string;
   context?: Record<string, any>;

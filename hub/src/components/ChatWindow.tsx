@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { AppPortConfig } from './AppCard'
 import { useAuth } from '@/hooks/useAuth'
+import { useContextDetection } from '@/hooks/useContextDetection'
 import styles from './ChatWindow.module.css'
 
 interface Message {
@@ -11,14 +12,28 @@ interface Message {
   content: string
   timestamp: Date
   appSuggestion?: AppPortConfig
+  attachments?: FileAttachment[]
+}
+
+interface FileAttachment {
+  file_id: string
+  filename: string
+  file_type: 'audio' | 'video' | 'image' | 'other'
+  size: number
 }
 
 interface ChatWindowProps {
   selectedApp: AppPortConfig | null
   apps: AppPortConfig[]
+  conversationId: string | null
   onNavigateToApp: (app: AppPortConfig | null) => void
+  onNewConversationCreated?: (conversationId: string) => void
   isMobile?: boolean
   onMenuClick?: () => void
+  deviceType?: 'iphone' | 'android' | 'ipad' | 'desktop' | 'unknown'
+  deviceName?: string
+  projectPath?: string
+  selectedFile?: string
 }
 
 const API_URL = process.env.NEXT_PUBLIC_MIDDLEWARE_URL || 'http://localhost:4199'
@@ -30,34 +45,36 @@ const usedGreetings = new Set<string>()
 // Generate unique greeting
 const generateGreeting = async (user: { username?: string; name?: string } | null, isAuthenticated: boolean): Promise<string> => {
   if (isAuthenticated && user) {
-    // Personalized greeting for logged-in users
-    const name = user.name || user.username || 'friend'
-    const greetings = [
-      `Hey ${name}! 👋 Ready to dive into some AI-powered productivity today?`,
-      `Welcome back, ${name}! 🚀 What can Assist help you accomplish?`,
-      `Good to see you again, ${name}! ✨ Let's make something amazing together.`,
-      `Hello ${name}! 🌟 Your AI assistant is here and ready to assist.`,
-      `Hi there, ${name}! 💫 What would you like to create or explore today?`,
-      `Welcome, ${name}! 🎯 I'm here to help you achieve your goals.`,
-      `Hey ${name}! 🎨 Let's turn your ideas into reality.`,
-      `Greetings, ${name}! ⚡ Ready to supercharge your workflow?`,
-      `Hello ${name}! 🎪 What exciting project are we working on today?`,
-      `Hi ${name}! 🌈 Your personal AI assistant is at your service.`,
-    ]
-    
-    // Filter out used greetings
-    const available = greetings.filter(g => !usedGreetings.has(g))
-    if (available.length === 0) {
-      // Reset if all greetings used
-      usedGreetings.clear()
-      return greetings[Math.floor(Math.random() * greetings.length)]
+    // For logged-in users, fetch their Character's name from the backend
+    try {
+      const token = localStorage.getItem('assisant_ai_token')
+      const response = await fetch(`${BACKEND_URL}/api/character/greeting`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        if (data.greeting) {
+          return data.greeting
+        }
+        // If Character name is available, use it
+        if (data.character_name) {
+          const characterName = data.character_name
+          const userName = user.name || user.username || 'there'
+          return `Hi ${userName}! I'm ${characterName}, your dedicated Character. I'm here to study you and make your life easier, better, and more effective. How can I help you today?`
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch Character greeting:', error)
     }
     
-    const greeting = available[Math.floor(Math.random() * available.length)]
-    usedGreetings.add(greeting)
-    return greeting
+    // Fallback: Personalized greeting (will be replaced by Character name once loaded)
+    const name = user.name || user.username || 'friend'
+    return `Hello ${name}! 👋 Your Character is loading...`
   } else {
-    // Generic but intelligent greeting for non-authenticated users
+    // Generic greeting for non-authenticated users - use "Assist" as the generic name
     const genericGreetings = [
       `Hello! I'm Assist, your AI assistant. I can help you manage applications, answer questions, and guide you to the right tools. How can I assist you today?`,
       `Welcome! I'm Assist, here to help you navigate your AI tools and answer any questions. What would you like to explore?`,
@@ -81,33 +98,96 @@ const generateGreeting = async (user: { username?: string; name?: string } | nul
   }
 }
 
-export function ChatWindow({ selectedApp, apps, onNavigateToApp, isMobile = false, onMenuClick }: ChatWindowProps) {
+export function ChatWindow({ selectedApp, apps, conversationId, onNavigateToApp, onNewConversationCreated, isMobile = false, onMenuClick, deviceType, deviceName, projectPath, selectedFile }: ChatWindowProps) {
   const { user, isAuthenticated } = useAuth()
+  const viewingContext = useContextDetection(isMobile ? 4000 : 2500) // Slower polling on mobile
   const [messages, setMessages] = useState<Message[]>([])
-  const [greetingLoaded, setGreetingLoaded] = useState(false)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [attachments, setAttachments] = useState<FileAttachment[]>([])
+  const [uploading, setUploading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const greetingInitialized = useRef(false)
+  const lastAuthKey = useRef<string>('')
+  const currentConversationId = useRef<string | null>(null)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
-  // Load unique greeting on mount
+  // Load conversation history when conversationId changes
   useEffect(() => {
-    if (!greetingLoaded) {
+    if (conversationId && conversationId !== currentConversationId.current && isAuthenticated && user) {
+      currentConversationId.current = conversationId
+      setLoading(true)
+      
+      const token = localStorage.getItem('assisant_ai_token')
+      fetch(`${BACKEND_URL}/api/conversations/${conversationId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.messages && Array.isArray(data.messages)) {
+            const loadedMessages: Message[] = data.messages.map((msg: any, index: number) => ({
+              id: `${conversationId}-${index}`,
+              role: msg.role,
+              content: msg.content,
+              timestamp: new Date(msg.timestamp || Date.now()),
+            }))
+            setMessages(loadedMessages)
+          } else {
+            setMessages([])
+          }
+        })
+        .catch(err => {
+          console.error('Error loading conversation:', err)
+          setMessages([])
+        })
+        .finally(() => {
+          setLoading(false)
+        })
+    } else if (!conversationId && currentConversationId.current) {
+      // New chat - clear messages and reset
+      currentConversationId.current = null
+      setMessages([])
+      greetingInitialized.current = false
+    }
+  }, [conversationId, isAuthenticated, user])
+
+  // Load unique greeting only when messages are empty and greeting hasn't been initialized
+  useEffect(() => {
+    // Track auth state changes to reset greeting initialization
+    const currentAuthKey = `${user?.username || ''}-${isAuthenticated}`
+    if (currentAuthKey !== lastAuthKey.current) {
+      lastAuthKey.current = currentAuthKey
+      greetingInitialized.current = false
+    }
+
+    // Only initialize greeting if messages array is empty (prevents wiping out user messages)
+    // and we're not loading a conversation
+    if (messages.length === 0 && !greetingInitialized.current && !conversationId && !loading) {
+      greetingInitialized.current = true
+      // Load greeting asynchronously
       generateGreeting(user, isAuthenticated).then(greeting => {
-        setMessages([{
-          id: '1',
-          role: 'assistant',
-          content: greeting,
-          timestamp: new Date(),
-        }])
-        setGreetingLoaded(true)
+        // Double-check messages are still empty before setting (race condition protection)
+        setMessages(prev => {
+          if (prev.length === 0) {
+            return [{
+              id: '1',
+              role: 'assistant',
+              content: greeting,
+              timestamp: new Date(),
+            }]
+          }
+          return prev
+        })
       })
     }
-  }, [user, isAuthenticated, greetingLoaded])
+  }, [messages.length, user, isAuthenticated, conversationId, loading]) // Include messages.length to check when it becomes empty
 
   useEffect(() => {
     scrollToBottom()
@@ -127,19 +207,90 @@ export function ChatWindow({ selectedApp, apps, onNavigateToApp, isMobile = fals
     return null
   }
 
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+
+    setUploading(true)
+    const token = localStorage.getItem('assisant_ai_token')
+    const newAttachments: FileAttachment[] = []
+
+    try {
+      for (const file of Array.from(files)) {
+        // Determine file type
+        let fileType: 'audio' | 'video' | 'image' | 'other' = 'other'
+        let uploadEndpoint = '/api/upload/audio'
+        
+        if (file.type.startsWith('audio/')) {
+          fileType = 'audio'
+          uploadEndpoint = '/api/upload/audio'
+        } else if (file.type.startsWith('video/')) {
+          fileType = 'video'
+          uploadEndpoint = '/api/upload/video'
+        } else if (file.type.startsWith('image/')) {
+          fileType = 'image'
+          uploadEndpoint = '/api/upload/image'
+        }
+
+        // Upload file
+        const formData = new FormData()
+        formData.append('file', file)
+
+        const headers: HeadersInit = {}
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`
+        }
+
+        const uploadResponse = await fetch(`${BACKEND_URL}${uploadEndpoint}`, {
+          method: 'POST',
+          headers,
+          body: formData,
+        })
+
+        if (uploadResponse.ok) {
+          const uploadData = await uploadResponse.json()
+          newAttachments.push({
+            file_id: uploadData.file_id,
+            filename: file.name,
+            file_type: fileType,
+            size: file.size,
+          })
+        } else {
+          console.error(`Failed to upload ${file.name}:`, uploadResponse.statusText)
+        }
+      }
+
+      setAttachments((prev) => [...prev, ...newAttachments])
+    } catch (error) {
+      console.error('Error uploading files:', error)
+    } finally {
+      setUploading(false)
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+
+  const removeAttachment = (fileId: string) => {
+    setAttachments((prev) => prev.filter((att) => att.file_id !== fileId))
+  }
+
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!input.trim() || loading) return
+    if ((!input.trim() && attachments.length === 0) || loading) return
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input.trim(),
+      content: input.trim() || (attachments.length > 0 ? `[Sent ${attachments.length} file(s)]` : ''),
       timestamp: new Date(),
+      attachments: attachments.length > 0 ? [...attachments] : undefined,
     }
 
     setMessages((prev) => [...prev, userMessage])
     setInput('')
+    setAttachments([])
     setLoading(true)
 
     try {
@@ -152,21 +303,67 @@ export function ChatWindow({ selectedApp, apps, onNavigateToApp, isMobile = fals
         headers['Authorization'] = `Bearer ${token}`
       }
 
+      // Generate conversation_id if this is a new chat (only after first message is sent)
+      // Use existing conversationId if available, otherwise generate a new one
+      const convId = conversationId || `hub-chat-${Date.now()}`
+
       // Try to send to PersonalAI backend chat endpoint
+      // Include device information for device-aware responses
+      // Include file attachments if any
+      // Include project context if in ProjectMode
+      const requestBody: any = {
+        message: userMessage.content,
+        conversation_id: convId,
+        username: user?.username,
+        attachments: attachments.length > 0 ? attachments.map(att => ({
+          file_id: att.file_id,
+          file_type: att.file_type,
+          filename: att.filename,
+        })) : undefined,
+        device_info: {
+          deviceType: deviceType || 'unknown',
+          deviceName: deviceName || 'Unknown Device',
+          isMobile: isMobile,
+        },
+      }
+
+      // Add project context if in ProjectMode
+      if (projectPath) {
+        requestBody.project_context = {
+          project_path: projectPath,
+          selected_file: selectedFile,
+        }
+      }
+
+      // Add viewing context (what user is currently viewing)
+      requestBody.viewing_context = {
+        page: viewingContext.page,
+        formFields: viewingContext.formFields,
+        filters: viewingContext.filters,
+        videos: viewingContext.videos,
+        content: viewingContext.content,
+      }
+
       const response = await fetch(`${BACKEND_URL}/api/chat`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          message: userMessage.content,
-          conversation_id: 'hub-chat',
-          username: user?.username,
-        }),
+        body: JSON.stringify(requestBody),
       })
 
       let assistantContent = ''
+      let returnedConversationId = convId
       if (response.ok) {
         const data = await response.json()
         assistantContent = data.response || 'I received your message, but couldn\'t generate a response.'
+        // Update conversation ID if backend returned one (for new conversations)
+        if (data.conversation_id && !conversationId) {
+          returnedConversationId = data.conversation_id
+          currentConversationId.current = returnedConversationId
+          // Notify parent component about the new conversation
+          if (onNewConversationCreated) {
+            onNewConversationCreated(returnedConversationId)
+          }
+        }
       } else {
         const errorText = await response.text().catch(() => '')
         console.error('Chat API error:', response.status, errorText)
@@ -235,6 +432,21 @@ export function ChatWindow({ selectedApp, apps, onNavigateToApp, isMobile = fals
           >
             <div className={styles.messageContent}>
               <div className={styles.messageText}>{message.content}</div>
+              {message.attachments && message.attachments.length > 0 && (
+                <div className={styles.attachments}>
+                  {message.attachments.map((att) => (
+                    <div key={att.file_id} className={styles.attachment}>
+                      <span className={styles.attachmentIcon}>
+                        {att.file_type === 'audio' ? '🎵' : att.file_type === 'video' ? '🎬' : att.file_type === 'image' ? '🖼️' : '📎'}
+                      </span>
+                      <span className={styles.attachmentName}>{att.filename}</span>
+                      <span className={styles.attachmentSize}>
+                        {(att.size / 1024 / 1024).toFixed(2)} MB
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {message.appSuggestion && (
                 <div className={styles.appSuggestion}>
                   <p className={styles.suggestionText}>
@@ -272,22 +484,57 @@ export function ChatWindow({ selectedApp, apps, onNavigateToApp, isMobile = fals
       </div>
 
       <form onSubmit={sendMessage} className={styles.inputContainer}>
-        <input
-          ref={inputRef}
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Type your message..."
-          className={styles.input}
-          disabled={loading}
-        />
-        <button
-          type="submit"
-          disabled={!input.trim() || loading}
-          className={styles.sendButton}
-        >
-          Send
-        </button>
+        {attachments.length > 0 && (
+          <div className={styles.attachmentsPreview}>
+            {attachments.map((att) => (
+              <div key={att.file_id} className={styles.attachmentPreview}>
+                <span className={styles.attachmentPreviewIcon}>
+                  {att.file_type === 'audio' ? '🎵' : att.file_type === 'video' ? '🎬' : att.file_type === 'image' ? '🖼️' : '📎'}
+                </span>
+                <span className={styles.attachmentPreviewName}>{att.filename}</span>
+                <button
+                  type="button"
+                  onClick={() => removeAttachment(att.file_id)}
+                  className={styles.attachmentRemove}
+                  aria-label="Remove attachment"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className={styles.inputWrapper}>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="audio/*,video/*,image/*"
+            onChange={handleFileSelect}
+            className={styles.fileInput}
+            id="file-upload"
+            disabled={loading || uploading}
+          />
+          <label htmlFor="file-upload" className={styles.attachButton} title="Attach file">
+            📎
+          </label>
+          <input
+            ref={inputRef}
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Type your message..."
+            className={styles.input}
+            disabled={loading || uploading}
+          />
+          <button
+            type="submit"
+            disabled={(!input.trim() && attachments.length === 0) || loading || uploading}
+            className={styles.sendButton}
+          >
+            {uploading ? 'Uploading...' : 'Send'}
+          </button>
+        </div>
       </form>
     </div>
   )

@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist/popup",
+    "types": ["chrome"]
+  },
+  "include": ["popup/**/*.ts", "popup/**/*.tsx"]
+}
