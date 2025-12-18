@@ -20,15 +20,23 @@
     {
       "id": "mvpassistant-backend",
       "name": "MVP Assistant Backend",
-      "port": 4201,
+      "port": 4202,
       "description": "MVP Assistant API backend",
       "enabled": true,
       "type": "backend"
     },
     {
+      "id": "mvpassistant-frontend",
+      "name": "MVP Assistant Frontend",
+      "port": 4201,
+      "description": "MVP Assistant web interface",
+      "enabled": true,
+      "type": "frontend"
+    },
+    {
       "id": "personalai-backend",
       "name": "PersonalAI Backend",
-      "port": 4202,
+      "port": 4204,
       "description": "Base backend infrastructure - provides authentication, agent, and core services",
       "enabled": true,
       "type": "backend",
@@ -45,10 +53,18 @@
       "path": "apps/personalai/frontend"
     },
     {
-      "id": "mvpassistant-frontend",
-      "name": "MVP Assistant Frontend",
-      "port": 4204,
-      "description": "MVP Assistant web interface",
+      "id": "promptwriter-backend",
+      "name": "Prompt Writer Backend",
+      "port": 4206,
+      "description": "Prompt Writer API backend",
+      "enabled": true,
+      "type": "backend"
+    },
+    {
+      "id": "promptwriter-frontend",
+      "name": "Prompt Writer Frontend",
+      "port": 4205,
+      "description": "Prompt Writer web interface",
       "enabled": true,
       "type": "frontend"
     }

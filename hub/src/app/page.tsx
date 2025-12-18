@@ -14,6 +14,7 @@ export default function Home() {
   const { apps, loading, refresh, startApp, stopApp, error } = useApps()
   const { isMobile, isTablet } = useMobile()
   const [selectedApp, setSelectedApp] = useState<AppPortConfig | null>(null)
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null)
   const [showSidebar, setShowSidebar] = useState(!isMobile)
 
   useEffect(() => {
@@ -65,6 +66,10 @@ export default function Home() {
     }
   }
 
+  const handleSelectConversation = (conversationId: string | null) => {
+    setSelectedConversationId(conversationId)
+  }
+
   return (
     <div className={styles.container}>
       <Toolbar />
@@ -84,7 +89,9 @@ export default function Home() {
           <Sidebar
             apps={apps}
             selectedApp={selectedApp}
+            selectedConversationId={selectedConversationId}
             onSelectApp={setSelectedApp}
+            onSelectConversation={handleSelectConversation}
             onStart={handleStart}
             onStop={handleStop}
             isMobile={isMobile}
@@ -94,6 +101,7 @@ export default function Home() {
         <ChatWindow
           selectedApp={selectedApp}
           apps={apps}
+          conversationId={selectedConversationId}
           onNavigateToApp={handleNavigateToApp}
           isMobile={isMobile}
           onMenuClick={() => setShowSidebar(true)}

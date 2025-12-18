@@ -17,6 +17,7 @@ import os
 import json
 import logging
 import datetime
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -297,6 +298,168 @@ async def get_user_context(user_id: Optional[str] = None, auth_token: Optional[s
     return {}
 
 
+def detect_coding_prompt(prompt: str) -> bool:
+    """
+    Detect if a prompt is related to coding/development.
+    
+    Checks for development keywords, technical terminology, tools, and file operations.
+    """
+    prompt_lower = prompt.lower()
+    
+    # Development keywords
+    development_keywords = [
+        'code', 'function', 'api', 'database', 'server', 'client', 
+        'frontend', 'backend', 'programming', 'script', 'algorithm',
+        'framework', 'library', 'package', 'module', 'component'
+    ]
+    
+    # Technical terminology
+    technical_keywords = [
+        'variable', 'function', 'class', 'method', 'endpoint', 'route', 
+        'schema', 'interface', 'type', 'object', 'array', 'string',
+        'integer', 'boolean', 'async', 'await', 'promise', 'callback'
+    ]
+    
+    # Tools and environments
+    tool_keywords = [
+        'cursor', 'ide', 'editor', 'terminal', 'git', 'npm', 'pip', 
+        'yarn', 'docker', 'kubernetes', 'github', 'gitlab', 'vscode',
+        'webpack', 'babel', 'typescript', 'javascript', 'python', 'node'
+    ]
+    
+    # File operations
+    file_keywords = [
+        'file', 'directory', 'path', 'import', 'export', 'module',
+        'folder', 'create', 'delete', 'update', 'modify', 'read', 'write'
+    ]
+    
+    # Check if any keywords are present
+    all_keywords = development_keywords + technical_keywords + tool_keywords + file_keywords
+    
+    keyword_count = sum(1 for keyword in all_keywords if keyword in prompt_lower)
+    
+    # Consider it a coding prompt if at least 2 keywords are found
+    # This helps avoid false positives from single mentions
+    return keyword_count >= 2
+
+
+async def extract_key_points(prompt: str, use_llm: bool = True) -> Dict:
+    """
+    Extract key points (goals, objectives, missions, ideas, commands) from a prompt.
+    
+    Uses pattern matching and optionally LLM analysis to identify:
+    - Goals: What user wants to achieve
+    - Objectives: Specific targets
+    - Missions: Larger purpose
+    - Ideas: Concepts/approaches
+    - Commands: Specific actions/instructions
+    """
+    if not use_llm:
+        # Simple pattern matching fallback
+        goals = []
+        commands = []
+        
+        # Look for goal indicators
+        goal_patterns = [
+            r'i want to (.+?)(?:\.|$|,)',
+            r'goal is (.+?)(?:\.|$|,)',
+            r'need to (.+?)(?:\.|$|,)',
+            r'should (.+?)(?:\.|$|,)',
+        ]
+        
+        import re
+        for pattern in goal_patterns:
+            matches = re.findall(pattern, prompt, re.IGNORECASE)
+            goals.extend(matches)
+        
+        # Look for command indicators
+        command_patterns = [
+            r'create (.+?)(?:\.|$|,)',
+            r'build (.+?)(?:\.|$|,)',
+            r'add (.+?)(?:\.|$|,)',
+            r'implement (.+?)(?:\.|$|,)',
+        ]
+        
+        for pattern in command_patterns:
+            matches = re.findall(pattern, prompt, re.IGNORECASE)
+            commands.extend(matches)
+        
+        return {
+            "goals": goals[:5],  # Limit to top 5
+            "objectives": [],
+            "missions": [],
+            "ideas": [],
+            "commands": commands[:5]
+        }
+    
+    # Use LLM for more sophisticated extraction
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            extraction_prompt = f"""Extract key points from this user prompt and structure them as JSON:
+
+User Prompt:
+{prompt}
+
+Extract and categorize:
+- Goals: What the user wants to achieve (main objectives)
+- Objectives: Specific, measurable targets
+- Missions: Larger purpose or vision (if present)
+- Ideas: Concepts, approaches, or strategies mentioned
+- Commands: Specific actions, instructions, or tasks
+
+Return ONLY valid JSON in this format:
+{{
+  "goals": ["goal1", "goal2"],
+  "objectives": ["objective1", "objective2"],
+  "missions": ["mission1"] or [],
+  "ideas": ["idea1", "idea2"],
+  "commands": ["command1", "command2"]
+}}
+
+If a category has no items, use an empty array []. Be concise and extract only the most important points."""
+
+            response = await client.post(
+                f"{OLLAMA_BASE_URL}/api/generate",
+                json={
+                    "model": OLLAMA_MODEL,
+                    "prompt": extraction_prompt,
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.3,
+                        "num_predict": 500
+                    }
+                }
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                response_text = result.get("response", "")
+                
+                # Try to extract JSON from response
+                import json
+                import re
+                
+                # Look for JSON object in response
+                json_match = re.search(r'\{[^{}]*\}', response_text, re.DOTALL)
+                if json_match:
+                    try:
+                        extracted = json.loads(json_match.group())
+                        return {
+                            "goals": extracted.get("goals", [])[:5],
+                            "objectives": extracted.get("objectives", [])[:5],
+                            "missions": extracted.get("missions", [])[:3],
+                            "ideas": extracted.get("ideas", [])[:5],
+                            "commands": extracted.get("commands", [])[:5]
+                        }
+                    except json.JSONDecodeError:
+                        pass
+    except Exception as e:
+        logger.warning(f"Error extracting key points with LLM: {e}")
+    
+    # Fallback to pattern matching
+    return await extract_key_points(prompt, use_llm=False)
+
+
 async def rewrite_prompt_with_ollama(
     prompt: str,
     context: Optional[Dict] = None,
@@ -381,6 +544,10 @@ async def rewrite_prompt_with_ollama(
 - Enhance structure without losing details
 - If KEY VARIABLES/TAGS section exists, ensure ALL variables from that section are incorporated (these are separate tags/variables, not part of the description)""",
                 "aggressive": """
+- Extract and prioritize ALL key points: goals, objectives, missions, ideas, commands
+- Remove ALL fluff, rambling, and unnecessary words - focus entirely on actionable points
+- Structure output as: [Goals] → [Objectives] → [Commands/Actions]
+- For coding prompts: Preserve technical details while extracting core requirements
 - Completely restructure for maximum AI comprehension
 - Extract ALL key variables, constraints, and requirements explicitly
 - Break down complex requests into clear, sequential steps or sections
@@ -390,8 +557,24 @@ async def rewrite_prompt_with_ollama(
 - Optimize for processing efficiency while preserving ALL information
 - Transform into the most effective format possible
 - If KEY VARIABLES/TAGS section exists, integrate ALL variables as core requirements (these are separate tags/variables from the description, not optional context)
-- Structure for AI-driven building and execution"""
+- Structure for AI-driven building and execution
+- Output should be concise, focused, no fluff, entirely actionable"""
             }
+        
+        # Auto-detect coding prompts and upgrade to aggressive mode if needed
+        is_coding_prompt = detect_coding_prompt(prompt)
+        key_points = None
+        if is_coding_prompt and write_mode == "ai":
+            if optimization_level != "aggressive":
+                # Automatically upgrade to aggressive mode for coding prompts
+                optimization_level = "aggressive"
+                logger.info(f"Auto-detected coding prompt, upgrading optimization level to 'aggressive'")
+            # Extract key points for coding prompts
+            try:
+                key_points = await extract_key_points(prompt, use_llm=True)
+                logger.info(f"Extracted key points for coding prompt: {len(key_points.get('goals', []))} goals, {len(key_points.get('commands', []))} commands")
+            except Exception as e:
+                logger.warning(f"Error extracting key points: {e}")
         
         # Get user context if available
         user_context = {}
@@ -427,6 +610,19 @@ async def rewrite_prompt_with_ollama(
                     social_media_context_str = f"\n\nUSER CONTEXT:\n- Background: {occupation}\n\nConsider the user's background when generating posts, but keep it authentic and engaging."
         
         # Mode-specific instructions
+        # Add key point extraction instructions if coding prompt detected
+        key_points_instruction = ""
+        if is_coding_prompt and key_points:
+            goals_str = ", ".join(key_points.get("goals", [])[:3]) if key_points.get("goals") else ""
+            commands_str = ", ".join(key_points.get("commands", [])[:3]) if key_points.get("commands") else ""
+            if goals_str or commands_str:
+                key_points_instruction = f"\n\nEXTRACTED KEY POINTS:\n"
+                if goals_str:
+                    key_points_instruction += f"- Goals: {goals_str}\n"
+                if commands_str:
+                    key_points_instruction += f"- Commands: {commands_str}\n"
+                key_points_instruction += "Use these key points to structure the optimized prompt, focusing on goals and actionable commands."
+        
         mode_instructions = {
             "ai": f"""
 Your job is to take user prompts and rewrite them to be:
@@ -436,6 +632,13 @@ Your job is to take user prompts and rewrite them to be:
 4. More efficient for AI processing (reduces token usage and processing intensity)
 5. Preserves the original intent and meaning
 {user_context_str}
+
+KEY POINT EXTRACTION (especially for coding/development prompts):
+- Extract and structure: Goals → Objectives → Commands
+- Remove all rambling, focus on actionable points
+- For coding prompts: Preserve technical details, extract core requirements
+- Output should be concise, no fluff, entirely focused on key points
+{key_points_instruction}
 
 IMPORTANT: If a KEY VARIABLES/TAGS section is provided, it contains essential variables and tags that are SEPARATE from the prompt description. These must be incorporated into the optimized prompt.
 

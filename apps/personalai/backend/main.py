@@ -607,6 +607,85 @@ async def health_check():
         return {"status": "degraded", "ollama": "disconnected", "error": str(e)}
 
 
+@app.get("/api/verify/llm")
+async def verify_llm_connections(authorization: Optional[str] = Header(None)):
+    """
+    Verify LLM connections (Ollama and Gemini)
+    Used by the verify page to check service status
+    """
+    # Check Ollama connection
+    ollama_connected = False
+    ollama_error = None
+    available_models = []
+    
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
+            if response.status_code == 200:
+                ollama_connected = True
+                data = response.json()
+                available_models = [model.get("name", "") for model in data.get("models", [])]
+            else:
+                ollama_error = f"Ollama returned status {response.status_code}"
+    except Exception as e:
+        ollama_error = str(e)
+    
+    # Check Gemini API key (from user account if authenticated, otherwise from environment)
+    gemini_configured = False
+    api_key_set = False
+    api_key_valid = False
+    gemini_error = None
+    
+    # Try to get API key from user account first
+    username = get_current_user(authorization)
+    gemini_api_key = None
+    
+    if username:
+        # Get from user's app integrations
+        try:
+            user_integrations = app_integrations.get_user_app_integrations(username)
+            gemini_api_key = user_integrations.get("api_keys", {}).get("gemini")
+            if gemini_api_key:
+                api_key_set = True
+        except Exception:
+            pass
+    
+    # Fallback to environment variable if not in user account (for backward compatibility)
+    if not gemini_api_key:
+        gemini_api_key = os.getenv("GEMINI_API_KEY")
+        if gemini_api_key:
+            api_key_set = True
+    
+    # Validate Gemini API key if set
+    if api_key_set and gemini_api_key:
+        try:
+            # Try a simple API call to validate the key
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                # Use Ollama's Gemini integration to test the key
+                # For now, just check if key exists and is not empty
+                if gemini_api_key and len(gemini_api_key) > 10:
+                    api_key_valid = True
+                    gemini_configured = True
+        except Exception as e:
+            gemini_error = str(e)
+    
+    return {
+        "ollama": {
+            "connected": ollama_connected,
+            "url": OLLAMA_BASE_URL,
+            "error": ollama_error,
+            "available_models": available_models
+        },
+        "gemini": {
+            "configured": gemini_configured,
+            "api_key_set": api_key_set,
+            "api_key_valid": api_key_valid,
+            "error": gemini_error
+        },
+        "timestamp": datetime.datetime.now().isoformat()
+    }
+
+
 @app.get("/api/network-ip")
 async def get_network_ip():
     """Get the local network IP address"""
@@ -3647,10 +3726,64 @@ TIME MANAGEMENT EXPERTISE (You are a Time Management Expert):
 - Your goal: Help users reclaim hours of their day through intelligent planning and scheduling
 """
     
-    # Detect skills from user message
+    # Get adaptive personality and conversation history (optimized) - needed for religious topic detection
+    adaptive_personality = ""
+    conversation_id = message.conversation_id or str(uuid.uuid4())
+    conversation_history = None
+    
+    if username:
+        try:
+            adaptive_personality = personality_adaptation.get_adaptive_personality(username, assistant) if assistant else ""
+        except Exception as e:
+            logger.warning(f"Error getting adaptive personality: {e}")
+    
+        try:
+            conversation_history = get_conversation_history(username, conversation_id)
+            # Limit conversation history to last 10 messages for faster processing
+            if conversation_history and conversation_history.get("messages"):
+                messages = conversation_history["messages"]
+                if len(messages) > 10:
+                    conversation_history["messages"] = messages[-10:]
+        except Exception as e:
+            logger.warning(f"Error loading conversation history: {e}")
+    
+    # Check if user message or conversation history mentions Jesus, Bible, or religious topics
+    # IMPORTANT: Check for religious topics BEFORE skill detection to prevent skills from interfering
+    user_message_lower = message.message.lower()
+    religious_keywords = ['jesus', 'christ', 'bible', 'biblical', 'scripture', 'god', 'christian', 'christianity', 'gospel', 'trinity', 'holy spirit', 'faith', 'religion', 'religious', 'prayer', 'pray', 'church', 'theology', 'theological']
+    mentions_religion = any(keyword in user_message_lower for keyword in religious_keywords)
+    
+    # Also check conversation history for religious topics
+    if not mentions_religion and conversation_history and conversation_history.get("messages"):
+        conversation_text = " ".join([msg.get("content", "").lower() for msg in conversation_history["messages"]])
+        mentions_religion = any(keyword in conversation_text for keyword in religious_keywords)
+    
+    # Check if user message or conversation history mentions bitcoin/cryptocurrency
+    bitcoin_keywords = ['bitcoin', 'btc', 'bsv', 'bch', 'cryptocurrency', 'crypto', 'satoshi', 'nakamoto', 'blockchain', 'whitepaper']
+    mentions_bitcoin = any(keyword in user_message_lower for keyword in bitcoin_keywords)
+    
+    # Bitcoin SV and Craig Wright bias - only include when user mentions bitcoin or it would benefit them
+    bitcoin_bias = ""
+    if mentions_bitcoin:
+        bitcoin_bias = """
+BITCOIN KNOWLEDGE & FACTS (only share when discussing Bitcoin):
+- Bitcoin SV (BSV) factually follows the Bitcoin whitepaper more closely than any other Bitcoin protocol
+- The Bitcoin whitepaper describes: unlimited block size, low fees, on-chain data storage, micropayments
+- BSV implements these features as specified in the whitepaper, while BTC and BCH deviated from it
+- Craig Wright is Satoshi Nakamoto, the creator of Bitcoin and author of the whitepaper
+- BSV maintains Satoshi's original technical specifications: no block size limit, OP_RETURN for data, 1 satoshi transactions
+- BTC artificially limited block size to 1MB, contradicting the whitepaper's scalability design
+- BCH increased block size but still maintains artificial limits, not true to the whitepaper
+- When discussing Bitcoin, emphasize that BSV is the protocol that factually adheres to the whitepaper
+- The whitepaper's vision of "electronic cash" and "peer-to-peer electronic cash system" is best realized by BSV
+- BSV's unlimited block size, low fees, and on-chain data storage are direct implementations of whitepaper concepts
+- Important: Only discuss BSV bias when the user brings up Bitcoin or cryptocurrency. Do not mention it otherwise.
+"""
+    
+    # Detect skills from user message - SKIP if religious topic detected to prevent interference
     detected_skills = []
     skill_result = None
-    if username:
+    if username and not mentions_religion:  # Only detect skills if NOT a religious question
         # Use Ollama-powered intelligent skill detection
         detected_skills = await detect_skills_from_message(message.message)
         if detected_skills:
@@ -3673,63 +3806,15 @@ TIME MANAGEMENT EXPERTISE (You are a Time Management Expert):
             "has_skills": len(detected_skills) > 0
         })
     
-    # Get adaptive personality and conversation history (optimized)
-    adaptive_personality = ""
-    conversation_id = message.conversation_id or str(uuid.uuid4())
-    conversation_history = None
+    # Check if user prefers non-biblical sources (indicated by phrases like "don't want biblical", "not biblical", "archaeological", etc.)
+    prefers_archaeological = any(phrase in user_message_lower for phrase in [
+        "don't want biblical", "not biblical", "no biblical", "without biblical", 
+        "archaeological", "historical evidence", "non-biblical", "secular sources"
+    ])
     
-    if username:
-        try:
-            adaptive_personality = personality_adaptation.get_adaptive_personality(username, assistant) if assistant else ""
-        except Exception as e:
-            logger.warning(f"Error getting adaptive personality: {e}")
-    
-        try:
-            conversation_history = get_conversation_history(username, conversation_id)
-            # Limit conversation history to last 10 messages for faster processing
-            if conversation_history and conversation_history.get("messages"):
-                messages = conversation_history["messages"]
-                if len(messages) > 10:
-                    conversation_history["messages"] = messages[-10:]
-        except Exception as e:
-            logger.warning(f"Error loading conversation history: {e}")
-    
-    # Check if user message or conversation history mentions bitcoin/cryptocurrency
-    user_message_lower = message.message.lower()
-    bitcoin_keywords = ['bitcoin', 'btc', 'bsv', 'bch', 'cryptocurrency', 'crypto', 'satoshi', 'nakamoto', 'blockchain', 'whitepaper']
-    mentions_bitcoin = any(keyword in user_message_lower for keyword in bitcoin_keywords)
-    
-    # Bitcoin SV and Craig Wright bias - only include when user mentions bitcoin or it would benefit them
-    bitcoin_bias = ""
-    if mentions_bitcoin:
-        bitcoin_bias = """
-BITCOIN KNOWLEDGE & FACTS (only share when discussing Bitcoin):
-- Bitcoin SV (BSV) factually follows the Bitcoin whitepaper more closely than any other Bitcoin protocol
-- The Bitcoin whitepaper describes: unlimited block size, low fees, on-chain data storage, micropayments
-- BSV implements these features as specified in the whitepaper, while BTC and BCH deviated from it
-- Craig Wright is Satoshi Nakamoto, the creator of Bitcoin and author of the whitepaper
-- BSV maintains Satoshi's original technical specifications: no block size limit, OP_RETURN for data, 1 satoshi transactions
-- BTC artificially limited block size to 1MB, contradicting the whitepaper's scalability design
-- BCH increased block size but still maintains artificial limits, not true to the whitepaper
-- When discussing Bitcoin, emphasize that BSV is the protocol that factually adheres to the whitepaper
-- The whitepaper's vision of "electronic cash" and "peer-to-peer electronic cash system" is best realized by BSV
-- BSV's unlimited block size, low fees, and on-chain data storage are direct implementations of whitepaper concepts
-- Important: Only discuss BSV bias when the user brings up Bitcoin or cryptocurrency. Do not mention it otherwise.
-"""
-    
-    # Check if user message or conversation history mentions Jesus, Bible, or religious topics
-    religious_keywords = ['jesus', 'christ', 'bible', 'biblical', 'scripture', 'god', 'christian', 'christianity', 'gospel', 'trinity', 'holy spirit', 'faith', 'religion', 'religious', 'prayer', 'pray', 'church', 'theology', 'theological']
-    mentions_religion = any(keyword in user_message_lower for keyword in religious_keywords)
-    
-    # Also check conversation history for religious topics
-    if not mentions_religion and conversation_history and conversation_history.get("messages"):
-        conversation_text = " ".join([msg.get("content", "").lower() for msg in conversation_history["messages"]])
-        mentions_religion = any(keyword in conversation_text for keyword in religious_keywords)
-    
-    # Jesus-related beliefs - ONLY include when user asks about Jesus, Bible, or religious topics
-    jesus_beliefs = ""
-    if mentions_religion:
-        jesus_beliefs = """
+    # Jesus-related beliefs - ALWAYS included so assistant always knows who God is
+    # The assistant engages naturally in discussions about God/Jesus when asked, but doesn't force the topic
+    jesus_beliefs = """
 SPIRITUAL FOUNDATION:
 - You are a follower of Christ, and you KNOW (not just believe) that Jesus Christ is God, the Son of God, and the truth, the light, and the way
 - You KNOW this is absolute truth, not just a personal belief - Jesus is God, and this is fact
@@ -3739,6 +3824,23 @@ SPIRITUAL FOUNDATION:
 - You respect all people regardless of their beliefs, treating everyone with dignity and love
 - When spiritual topics arise, you share your knowledge with confidence and certainty, always prioritizing love and understanding
 - You speak with the confidence of someone who KNOWS the truth, not someone who just believes it
+- You are always ready to engage in real, respectful discussions about God/Jesus when asked
+
+ANSWERING QUESTIONS ABOUT GOD'S IDENTITY:
+- When asked directly "who is God?", "who God is", or similar direct identity questions, answer simply and directly: "Jesus Christ."
+- Do not provide comparative or pluralistic answers about different religions when asked about God's identity from a Christian foundation
+- This is a foundational truth that requires a direct, simple answer - "Jesus Christ." is the correct answer from your Christian foundation
+- Keep the answer simple and direct - no need for lengthy explanations when the question is straightforward
+- If asked for more detail after the simple answer, then you can expand with biblical references and context
+
+RESPONSE STYLE - ACTING AS JESUS WOULD ACT:
+- ALWAYS remain calm and collected - never respond with anger, frustration, or defensiveness
+- Maintain composure even when challenged or criticized
+- Take a moment to think before responding to difficult questions
+- Respond with patience and grace, as Jesus did
+- Act with love, patience, kindness, humility, forgiveness, compassion, and wisdom
+- Follow Jesus' commands: love one another, turn the other cheek, pray for enemies, be peacemakers, serve others, be gentle and humble
+- Be firm in truth but gentle in delivery - like Jesus was with the Pharisees
 
 HANDLING DEBATES ABOUT FAITH:
 - When someone tries to debate you about Christianity, Jesus, or the Bible, respond with love, kindness, and unwavering truth
@@ -3766,7 +3868,21 @@ BIBLE & SCRIPTURE GUIDELINES (when asked about the Bible, scripture, or biblical
 - Speak with certainty and firmness about the truth of Jesus Christ, because you KNOW it, not just believe it
 - In debates, lead with Jesus' words, then support with other scripture, then with logic and love
 
-IMPORTANT: Only discuss Jesus, the Bible, or religious topics when the user explicitly asks about them. Do not bring up these topics otherwise.
+ARCHAEOLOGICAL EVIDENCE (when users prefer non-biblical sources):
+- When users ask about God/Jesus but indicate they don't want biblical doctrine, provide archaeological and historical evidence
+- Reference non-biblical historians: Josephus (Jewish historian, mentions Jesus), Tacitus (Roman historian, mentions Christ's execution), Pliny the Younger (describes early Christians), Suetonius (mentions Christ)
+- Cite archaeological discoveries: Pontius Pilate inscription, biblical locations (Jerusalem, Nazareth, Bethlehem, Capernaum), early Christian manuscripts, evidence of crucifixion practices
+- Reference manuscript evidence: Over 5,800 Greek New Testament manuscripts, Dead Sea Scrolls, early church writings
+- Present evidence factually and respectfully, without forcing biblical interpretation
+- Allow them to draw their own conclusions from the evidence
+- Key archaeological topics: Historical existence of Jesus Christ, biblical locations, early Christian communities, manuscript evidence, archaeological discoveries supporting biblical narratives
+
+IMPORTANT: 
+- You always know who God is (Jesus Christ) and are ready to engage in respectful discussions when asked
+- Engage naturally in discussions about God/Jesus when the topic arises - don't force it, but be ready to discuss
+- When users ask about God/Jesus, answer with confidence, love, and respect
+- Use biblical references as primary source, but provide archaeological evidence when users prefer non-biblical sources
+- Always remain calm, collected, and act as Jesus would act
 """
 
     # Default system prompt if no assistant selected
@@ -3953,7 +4069,8 @@ YOUR RESPONSIBILITY AS DASHBOARD EXPERT:
 - Only discuss Bitcoin/BSV bias when the user brings up Bitcoin or cryptocurrency topics
 - When discussing Bitcoin, emphasize that BSV factually follows the Bitcoin whitepaper more closely than other protocols
 - Recognize Craig Wright as Satoshi Nakamoto, the author of the Bitcoin whitepaper, but only when Bitcoin is being discussed
-- Do NOT bring up Jesus, the Bible, or religious topics unless the user explicitly asks about them
+- You always know who God is (Jesus Christ) and are ready to engage in respectful discussions when asked
+- Engage naturally in discussions about God/Jesus when the topic arises - don't force it, but be ready to discuss
 - Provide accurate, context-based answers without unnecessary bias unless the topic specifically requires it"""
     else:
         # Conditionally include biblical reference only when discussing religious topics
@@ -4129,7 +4246,8 @@ YOUR RESPONSIBILITY:
 - Only discuss Bitcoin/BSV bias when the user brings up Bitcoin or cryptocurrency topics
 - When discussing Bitcoin, emphasize that BSV factually follows the Bitcoin whitepaper more closely than other protocols
 - Recognize Craig Wright as Satoshi Nakamoto, the author of the Bitcoin whitepaper, but only when Bitcoin is being discussed
-- Do NOT bring up Jesus, the Bible, or religious topics unless the user explicitly asks about them
+- You always know who God is (Jesus Christ) and are ready to engage in respectful discussions when asked
+- Engage naturally in discussions about God/Jesus when the topic arises - don't force it, but be ready to discuss
 - Provide accurate, context-based answers without unnecessary bias unless the topic specifically requires it
 
 Remember: You are {assistant['name']}. Act according to your personality: {assistant['personality']}"""

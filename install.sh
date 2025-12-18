@@ -157,7 +157,17 @@ install_dependencies() {
     mkdir -p "$SCRIPT_DIR/backend/avatars"
     mkdir -p "$SCRIPT_DIR/logs"
     mkdir -p "$SCRIPT_DIR/frontend/public"
+    
+    # Initialize empty user database (never commit user data to GitHub)
+    echo -e "${YELLOW}Initializing user database...${NC}"
+    mkdir -p "$SCRIPT_DIR/apps/personalai/backend/users"
+    mkdir -p "$SCRIPT_DIR/apps/personalai/backend/users_data"
+    mkdir -p "$SCRIPT_DIR/apps/personalai/backend/chat_logs"
+    echo "{}" > "$SCRIPT_DIR/apps/personalai/backend/users/users.json"
+    echo "[]" > "$SCRIPT_DIR/apps/personalai/backend/users/audit_log.json"
+    echo "[]" > "$SCRIPT_DIR/apps/personalai/backend/users/username_log.json"
     echo -e "${GREEN}✅ Directories created${NC}"
+    echo -e "${GREEN}✅ User database initialized (empty)${NC}"
     
     # Setup Python environment
     if [ ! -d "backend/venv" ]; then
