@@ -80,11 +80,31 @@ authRouter.post('/register', async (req: Request, res: Response) => {
     });
 
   } catch (error: any) {
-    logger.error('Registration error', { error: error.message });
+    logger.error('Registration error', { error: error.message, response: error.response?.data });
     
     if (error.response) {
-      return res.status(error.response.status).json({
-        error: error.response.data?.detail || error.response.data?.error || 'Registration failed'
+      // Handle FastAPI validation errors (422)
+      const status = error.response.status;
+      const errorData = error.response.data;
+      
+      // FastAPI returns validation errors as an array in the detail field
+      if (status === 422 && Array.isArray(errorData?.detail)) {
+        const validationErrors = errorData.detail.map((err: any) => {
+          const field = Array.isArray(err.loc) ? err.loc[err.loc.length - 1] : 'field';
+          return `${field}: ${err.msg || 'validation error'}`;
+        }).join('. ');
+        
+        return res.status(422).json({
+          error: validationErrors,
+          detail: errorData.detail
+        });
+      }
+      
+      // Handle other error formats
+      const errorMessage = errorData?.detail || errorData?.error || 'Registration failed';
+      return res.status(status).json({
+        error: typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage),
+        detail: errorData?.detail
       });
     }
 

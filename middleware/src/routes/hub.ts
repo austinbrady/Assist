@@ -4,6 +4,7 @@ import { AuthRequest } from '../middleware/auth';
 import { spawn, ChildProcess } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import axios from 'axios';
 
 // Import port manager - use require for workspace packages
 let PortManager: any;
@@ -93,7 +94,7 @@ hubRouter.post('/apps/:appId/start', async (req: AuthRequest, res: Response) => 
     if (!app) {
       logger.error(`App not found: ${appId}`, {
         appId,
-        availableApps: portManager.getAllApps().map(a => a.id)
+        availableApps: portManager.getAllApps().map((a: { id: string }) => a.id)
       });
       return res.status(404).json({ error: 'App not found' });
     }
@@ -138,10 +139,10 @@ hubRouter.post('/apps/:appId/start', async (req: AuthRequest, res: Response) => 
     // If there's a custom startCommand in config, use it
     if (app.startCommand) {
       // Parse the startCommand (e.g., "cd apps/personalai && ./start.sh")
-      const parts = app.startCommand.split('&&').map(s => s.trim());
+      const parts = app.startCommand.split('&&').map((s: string) => s.trim());
       if (parts.length > 1) {
         // Handle cd commands
-        const cdPart = parts.find(p => p.startsWith('cd '));
+        const cdPart = parts.find((p: string) => p.startsWith('cd '));
         if (cdPart) {
           const cdPath = cdPart.replace('cd ', '').trim();
           cwd = path.join(process.cwd(), cdPath);
@@ -290,6 +291,57 @@ hubRouter.post('/apps/register', async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     logger.error('Register app error', { error: error.message });
     res.status(500).json({ error: 'Failed to register app' });
+  }
+});
+
+/**
+ * Verify LLM connections (Ollama and Gemini)
+ * GET /api/hub/verify/llm
+ * Proxies to PersonalAI backend
+ */
+hubRouter.get('/verify/llm', async (req: Request, res: Response) => {
+  try {
+    const PERSONAL_AI_BASE_URL = process.env.PERSONAL_AI_BASE_URL || 'http://localhost:4202';
+    
+    const response = await axios.get(`${PERSONAL_AI_BASE_URL}/api/verify/llm`, {
+      timeout: 5000
+    });
+    
+    res.json(response.data);
+  } catch (error: any) {
+    logger.error('Verify LLM error', { error: error.message });
+    
+    if (error.response) {
+      return res.status(error.response.status).json({
+        ollama: {
+          connected: false,
+          url: 'http://localhost:11434',
+          error: error.response.data?.error || 'Failed to check Ollama connection'
+        },
+        gemini: {
+          configured: false,
+          api_key_set: false,
+          api_key_valid: false,
+          error: 'Unable to check'
+        },
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    res.status(500).json({
+      ollama: {
+        connected: false,
+        url: 'http://localhost:11434',
+        error: 'Backend not responding'
+      },
+      gemini: {
+        configured: false,
+        api_key_set: false,
+        api_key_valid: false,
+        error: 'Unable to check'
+      },
+      timestamp: new Date().toISOString()
+    });
   }
 });
 

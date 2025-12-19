@@ -35,6 +35,8 @@ export default function VerifyPage() {
   }, [])
 
   const checkLLMConnectionsWithRetry = async (retries = 10) => {
+    const MIDDLEWARE_URL = process.env.NEXT_PUBLIC_MIDDLEWARE_URL || 'http://localhost:4199';
+    
     for (let i = 0; i < retries; i++) {
       try {
         setLoading(true)
@@ -43,7 +45,7 @@ export default function VerifyPage() {
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
         
-        const response = await fetch('http://localhost:4202/api/verify/llm', {
+        const response = await fetch(`${MIDDLEWARE_URL}/api/hub/verify/llm`, {
           signal: controller.signal
         })
         
@@ -126,8 +128,8 @@ export default function VerifyPage() {
             </div>
           </div>
 
-          {/* Warning message if Gemini not configured */}
-          {!geminiConfigured && (
+          {/* Warning message if Gemini not configured but Ollama is working (stuck working locally) */}
+          {ollamaConnected && !geminiConfigured && (
             <div className={styles.geminiWarning}>
               <p>⚠️ Assist will STILL work without Gemini, but it will work better with it!</p>
             </div>

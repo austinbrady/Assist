@@ -50,8 +50,8 @@ export function useAuth() {
     
     if (unifiedToken) {
       setToken(unifiedToken)
-      // Verify token and get user info from middleware
-      verifyToken()
+      // Don't call verifyToken() here - let the second useEffect handle it
+      // when token state actually updates (React state updates are async)
     } else {
       setLoading(false)
     }
