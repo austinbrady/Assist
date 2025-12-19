@@ -1,0 +1,18 @@
+{
+  "category": "Uncategorized",
+  "description": "The idea of Assist is to be a real life MegaMan.exe like from the Cartoon from the early 2000s. We want a personal Assistant that can carry out tasks, make streamline to do lists, write emails, make calls, etc.",
+  "steps": [],
+  "images": [],
+  "imagePaths": [],
+  "skipTests": true,
+  "model": "opus",
+  "thinkingLevel": "none",
+  "branchName": "main",
+  "priority": 2,
+  "planningMode": "full",
+  "requirePlanApproval": false,
+  "status": "backlog",
+  "id": "feature-1766165035734-ybm2s74r2",
+  "startedAt": "2025-12-19T18:41:24.761Z",
+  "updatedAt": "2025-12-19T18:41:24.871Z"
+}

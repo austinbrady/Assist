@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { Send, Image as ImageIcon, Video, Loader2, Upload, X, Sparkles, Wand2, Film, History, Menu, ChevronDown, ChevronUp, Trash2, Music, Settings, Zap, User, Bitcoin, Download, RefreshCw, Folder, FolderOpen, Code, FilePlus, FileText, Clock, Bell, Play, Pause, Copy } from 'lucide-react'
 import axios from 'axios'
+import { getAuthToken, setAuthToken as setAuthTokenUtil, removeAuthToken } from '../utils/auth'
 
 // Configure axios with longer timeout for slower connections
 axios.defaults.timeout = 30000 // 30 seconds
@@ -649,13 +650,22 @@ export default function Home(): React.ReactElement {
   }, [messages])
 
   useEffect(() => {
-    const token = localStorage.getItem('auth_token')
+    // Use unified token utility (checks URL param, localStorage with fallback)
+    const token = getAuthToken()
     const storedUsername = localStorage.getItem('username')
     
     if (token) {
+      // Ensure token is stored in localStorage (getAuthToken should have done this, but double-check)
+      const storedToken = localStorage.getItem('assisant_ai_token')
+      if (storedToken !== token) {
+        console.log('[Auth] Storing token in localStorage from URL or fallback')
+        setAuthTokenUtil(token)
+      }
+      
       setAuthToken(token)
       checkAuthStatus(token)
     } else {
+      console.log('[Auth] No token found, showing login screen')
       setShowLogin(true)
       // Restore username if available (for convenience)
       if (storedUsername) {
@@ -786,7 +796,14 @@ export default function Home(): React.ReactElement {
       setWallet(response.data)
       alert('Wallet regenerated successfully!')
     } catch (error: unknown) {
-      alert(`Failed to regenerate wallet: ${error.response?.data?.detail || error.message}`)
+      let errorMessage = 'Unknown error occurred'
+      if (error instanceof Error) {
+        errorMessage = error.message
+      } else if (typeof error === 'object' && error !== null && 'response' in error) {
+        const axiosError = error as { response?: { data?: { detail?: string } } }
+        errorMessage = axiosError.response?.data?.detail || 'Failed to regenerate wallet'
+      }
+      alert(`Failed to regenerate wallet: ${errorMessage}`)
     } finally {
       setRegeneratingWallet(false)
     }
@@ -812,7 +829,14 @@ export default function Home(): React.ReactElement {
       link.remove()
       window.URL.revokeObjectURL(url)
     } catch (error: unknown) {
-      alert(`Failed to download wallet: ${error.response?.data?.detail || error.message}`)
+      let errorMessage = 'Unknown error occurred'
+      if (error instanceof Error) {
+        errorMessage = error.message
+      } else if (typeof error === 'object' && error !== null && 'response' in error) {
+        const axiosError = error as { response?: { data?: { detail?: string } } }
+        errorMessage = axiosError.response?.data?.detail || 'Failed to download wallet'
+      }
+      alert(`Failed to download wallet: ${errorMessage}`)
     }
   }
 
@@ -857,7 +881,7 @@ export default function Home(): React.ReactElement {
     }))
   }
 
-  const formatBalance = (walletType: string, balances: WalletBalances[keyof WalletBalances]) => {
+  const formatBalance = (walletType: string, balances: WalletBalances) => {
     if (!balances) return '$0.00'
     
     const mode = balanceDisplayMode[walletType] || 'usd'
@@ -1035,10 +1059,24 @@ export default function Home(): React.ReactElement {
   }, [])
 
   const checkAuthStatus = async (token: string) => {
+    // Validate token exists before making API call
+    if (!token || token.trim() === '') {
+      console.error('[Auth] No token provided to checkAuthStatus')
+      setShowLogin(true)
+      return
+    }
+
     try {
+      console.log('[Auth] Checking authentication status...', { 
+        tokenLength: token.length,
+        apiUrl: `${API_BASE_URL}/api/auth/me`
+      })
+      
       const response = await axios.get(`${API_BASE_URL}/api/auth/me`, {
         headers: { Authorization: `Bearer ${token}` }
       })
+      
+      console.log('[Auth] Authentication successful', { username: response.data.username })
       
       // Update stored username if it changed (case correction)
       if (response.data.username) {
@@ -1059,14 +1097,49 @@ export default function Home(): React.ReactElement {
       // NEVER show onboarding on page load or login - only after signup
       // Onboarding is handled in handleSignup() after successful account creation
       // This ensures each user's Personal AI is private and personalized only for them
-    } catch (error) {
-      // Token is invalid or expired, clear all auth data
-      localStorage.removeItem('auth_token')
-      localStorage.removeItem('username')
-      setAuthToken(null)
-      setIsAuthenticated(false)
-      setShowLogin(true)
-      document.title = 'Personal AI - Local AI Service'
+    } catch (error: any) {
+      // Distinguish between network errors and authentication errors
+      const isNetworkError = !error.response || error.code === 'ECONNABORTED' || error.code === 'ERR_NETWORK'
+      const isAuthError = error.response?.status === 401 || error.response?.status === 403
+      
+      if (isNetworkError) {
+        console.error('[Auth] Network error during authentication check:', {
+          message: error.message,
+          code: error.code,
+          apiUrl: `${API_BASE_URL}/api/auth/me`
+        })
+        // Don't clear token on network errors - might be temporary
+        // Just show login but keep token for retry
+        setShowLogin(true)
+        setIsAuthenticated(false)
+        document.title = 'Personal AI - Local AI Service'
+      } else if (isAuthError) {
+        console.error('[Auth] Authentication failed - invalid or expired token:', {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          detail: error.response?.data?.detail
+        })
+        // Token is invalid or expired, clear all auth data
+        removeAuthToken()
+        localStorage.removeItem('username')
+        setAuthToken(null)
+        setIsAuthenticated(false)
+        setShowLogin(true)
+        document.title = 'Personal AI - Local AI Service'
+      } else {
+        console.error('[Auth] Unexpected error during authentication check:', {
+          status: error.response?.status,
+          message: error.message,
+          data: error.response?.data
+        })
+        // For other errors, clear token to be safe
+        removeAuthToken()
+        localStorage.removeItem('username')
+        setAuthToken(null)
+        setIsAuthenticated(false)
+        setShowLogin(true)
+        document.title = 'Personal AI - Local AI Service'
+      }
     }
   }
 
@@ -1939,7 +2012,7 @@ export default function Home(): React.ReactElement {
       })
       
       // Store authentication data in localStorage for persistence
-      localStorage.setItem('auth_token', response.data.token)
+      setAuthTokenUtil(response.data.token)
       localStorage.setItem('username', response.data.username) // Store username for next login
       
       setAuthToken(response.data.token)
@@ -2041,7 +2114,7 @@ export default function Home(): React.ReactElement {
         username: signupUsername.trim(),
         password: signupPassword
       })
-      localStorage.setItem('auth_token', response.data.token)
+      setAuthTokenUtil(response.data.token)
       setAuthToken(response.data.token)
       setCurrentUser(response.data)
       setIsAuthenticated(true)
@@ -2124,7 +2197,7 @@ export default function Home(): React.ReactElement {
 
   // Sign out handler
   const handleSignOut = () => {
-    localStorage.removeItem('auth_token')
+    removeAuthToken()
     localStorage.removeItem('username')
     setAuthToken(null)
     setIsAuthenticated(false)
@@ -2442,7 +2515,7 @@ export default function Home(): React.ReactElement {
       // Handle 401 - authentication expired
       if (error.response?.status === 401) {
         console.error('Authentication expired. Please log in again.')
-        localStorage.removeItem('auth_token')
+        removeAuthToken()
         localStorage.removeItem('username')
         setAuthToken(null)
         setIsAuthenticated(false)
@@ -3206,7 +3279,7 @@ export default function Home(): React.ReactElement {
       // Handle 401 - authentication expired
       if (error.response?.status === 401) {
         console.error('Authentication expired. Please log in again.')
-        localStorage.removeItem('auth_token')
+        removeAuthToken()
         localStorage.removeItem('username')
         setAuthToken(null)
         setIsAuthenticated(false)
@@ -3287,7 +3360,7 @@ export default function Home(): React.ReactElement {
 
       const response = await axios.post(`${API_BASE_URL}/api/song/upload`, formData, {
         headers: {
-          'Authorization': `Bearer ${authToken || localStorage.getItem('auth_token')}`,
+          'Authorization': `Bearer ${authToken || getAuthToken()}`,
           'Content-Type': 'multipart/form-data'
         }
       })
@@ -3323,7 +3396,7 @@ export default function Home(): React.ReactElement {
         { song_id: songId },
         {
           headers: {
-            'Authorization': `Bearer ${authToken || localStorage.getItem('auth_token')}`
+            'Authorization': `Bearer ${authToken || getAuthToken()}`
           }
         }
       )
@@ -3351,7 +3424,7 @@ export default function Home(): React.ReactElement {
         { song_id: songId, instruction: rewriteInstruction },
         {
           headers: {
-            'Authorization': `Bearer ${authToken || localStorage.getItem('auth_token')}`
+            'Authorization': `Bearer ${authToken || getAuthToken()}`
           }
         }
       )
@@ -3379,7 +3452,7 @@ export default function Home(): React.ReactElement {
         { song_id: songId, style: coverStyle },
         {
           headers: {
-            'Authorization': `Bearer ${authToken || localStorage.getItem('auth_token')}`
+            'Authorization': `Bearer ${authToken || getAuthToken()}`
           }
         }
       )
@@ -3407,7 +3480,7 @@ export default function Home(): React.ReactElement {
         { song_id: songId, variation: altVariation },
         {
           headers: {
-            'Authorization': `Bearer ${authToken || localStorage.getItem('auth_token')}`
+            'Authorization': `Bearer ${authToken || getAuthToken()}`
           }
         }
       )
@@ -3451,7 +3524,7 @@ export default function Home(): React.ReactElement {
       const response = await axios.post(
         `${API_BASE_URL}/api/bsv/inscribe`,
         requestData,
-        { headers: { Authorization: `Bearer ${authToken || localStorage.getItem('auth_token')}` } }
+        { headers: { Authorization: `Bearer ${authToken || getAuthToken()}` } }
       )
 
       const message: Message = {
@@ -3464,7 +3537,7 @@ export default function Home(): React.ReactElement {
       
       // Reload inscriptions
       const inscriptionsRes = await axios.get(`${API_BASE_URL}/api/bsv/inscriptions`, {
-        headers: { Authorization: `Bearer ${authToken || localStorage.getItem('auth_token')}` }
+        headers: { Authorization: `Bearer ${authToken || getAuthToken()}` }
       })
       setBsvInscriptions(inscriptionsRes.data.inscriptions || [])
     } catch (error: unknown) {
@@ -3481,7 +3554,7 @@ export default function Home(): React.ReactElement {
       const response = await axios.post(
         `${API_BASE_URL}/api/gallery/scan`,
         {},
-        { headers: { Authorization: `Bearer ${authToken || localStorage.getItem('auth_token')}` } }
+        { headers: { Authorization: `Bearer ${authToken || getAuthToken()}` } }
       )
       setGalleryScanResults(response.data)
     } catch (error: unknown) {
@@ -3498,7 +3571,7 @@ export default function Home(): React.ReactElement {
       await axios.post(
         `${API_BASE_URL}/api/gallery/delete`,
         { file_ids: selectedImagesToDelete },
-        { headers: { Authorization: `Bearer ${authToken || localStorage.getItem('auth_token')}` } }
+        { headers: { Authorization: `Bearer ${authToken || getAuthToken()}` } }
       )
       setSelectedImagesToDelete([])
       scanGallery() // Rescan after deletion

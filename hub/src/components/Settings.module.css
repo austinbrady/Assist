@@ -3,7 +3,8 @@
   max-width: 800px;
   margin: 0 auto;
   background: white;
-  min-height: 100vh;
+  height: 100vh;
+  overflow-y: auto;
 }
 
 .settings h2 {

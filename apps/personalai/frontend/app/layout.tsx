@@ -31,6 +31,30 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html: `
+              // Handle provider collisions (fail-soft approach)
+              (function() {
+                // Prevent multiple wallet extensions from conflicting
+                const originalDefineProperty = Object.defineProperty;
+                Object.defineProperty = function(obj, prop, descriptor) {
+                  // If trying to define window.solana or window.ethereum and it already exists, skip
+                  if (obj === window && (prop === 'solana' || prop === 'ethereum')) {
+                    if (window[prop] !== undefined) {
+                      // Provider already exists, don't redefine
+                      return obj;
+                    }
+                  }
+                  try {
+                    return originalDefineProperty.call(this, obj, prop, descriptor);
+                  } catch (e) {
+                    // If redefinition fails, return the object as-is (fail-soft)
+                    if (e.message && e.message.includes('Cannot redefine property')) {
+                      return obj;
+                    }
+                    throw e;
+                  }
+                };
+              })();
+              
               // Suppress browser extension console errors (they don't affect app functionality)
               (function() {
                 const originalError = console.error;

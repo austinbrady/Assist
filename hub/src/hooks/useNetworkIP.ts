@@ -8,20 +8,45 @@ export function useNetworkIP(port: number = 4200) {
     const fetchIP = async () => {
       try {
         // Try to get IP from backend
-        const response = await fetch('http://localhost:4202/api/network-ip')
+        const response = await fetch('http://localhost:4202/api/network-ip', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        })
+        
         if (response.ok) {
           const data = await response.json()
-          setIpAddress(data.ip || 'localhost')
+          if (data.ip && data.ip !== 'localhost' && data.ip !== '127.0.0.1') {
+            console.log('[NetworkIP] Got IP from backend:', data.ip)
+            setIpAddress(data.ip)
+            setLoading(false)
+            return
+          } else {
+            // Invalid IP from backend, fall through to WebRTC
+          }
         } else {
+          // 404 is expected if backend isn't running - silently fall back to WebRTC
+          if (response.status !== 404) {
+            console.log('[NetworkIP] Backend returned status:', response.status, response.statusText)
+          }
           // Fallback: try to detect from WebRTC
           detectIPFromWebRTC()
+          return
         }
-      } catch (error) {
+      } catch (error: any) {
+        // Network errors (including 404) are expected if backend isn't running
+        // Only log non-network errors for debugging
+        if (!error.message?.includes('Failed to fetch') && !error.message?.includes('404')) {
+          console.log('[NetworkIP] Failed to fetch from backend:', error.message)
+        }
         // Fallback: try to detect from WebRTC
         detectIPFromWebRTC()
-      } finally {
-        setLoading(false)
+        return
       }
+      
+      // If we get here, backend didn't provide a valid IP, try WebRTC
+      detectIPFromWebRTC()
     }
 
     const detectIPFromWebRTC = () => {

@@ -216,18 +216,7 @@ export function Sidebar({ apps, selectedApp, selectedConversationId, onSelectApp
             return (
               <div
                 key={app.id}
-                className={`${styles.appItem} ${isSelected ? styles.selected : ''} ${app.status === 'running' ? styles.running : styles.stopped}`}
-                onClick={() => {
-                  // If app is running, navigate to it with auth token
-                  if (app.status === 'running' && app.url) {
-                    const token = typeof window !== 'undefined' ? localStorage.getItem('assisant_ai_token') : null
-                    const url = token ? `${app.url}?token=${encodeURIComponent(token)}` : app.url
-                    window.open(url, '_blank')
-                  } else {
-                    // Otherwise, select it (user can start it)
-                    onSelectApp(app)
-                  }
-                }}
+                className={`${styles.appItem} ${app.status === 'running' ? styles.running : styles.stopped}`}
               >
                 <div className={styles.appIcon}>{getAppIcon(app.name)}</div>
                 <div className={styles.appContent}>

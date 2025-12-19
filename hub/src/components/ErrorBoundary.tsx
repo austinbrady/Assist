@@ -25,6 +25,29 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   static getDerivedStateFromError(error: Error): State {
+    // Check if this is a Chrome extension error
+    const errorMessage = error.message?.toLowerCase() || ''
+    const errorStack = error.stack?.toLowerCase() || ''
+    
+    const isExtensionError = 
+      errorMessage.includes('chrome-extension://') ||
+      errorStack.includes('chrome-extension://') ||
+      errorMessage.includes('sensilet') ||
+      errorMessage.includes('exodus') ||
+      errorMessage.includes('backpack') ||
+      errorMessage.includes('yours wallet') ||
+      errorMessage.includes('cannot redefine property: solana') ||
+      errorMessage.includes('cannot redefine property: ethereum')
+    
+    // If it's a Chrome extension error, don't trigger error state
+    if (isExtensionError) {
+      return {
+        hasError: false,
+        error: null,
+        errorInfo: null,
+      }
+    }
+    
     return {
       hasError: true,
       error,
@@ -33,6 +56,29 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    // Check if this is a Chrome extension error
+    const errorMessage = error.message?.toLowerCase() || ''
+    const errorStack = error.stack?.toLowerCase() || ''
+    const componentStack = errorInfo.componentStack?.toLowerCase() || ''
+    
+    const isExtensionError = 
+      errorMessage.includes('chrome-extension://') ||
+      errorStack.includes('chrome-extension://') ||
+      componentStack.includes('chrome-extension://') ||
+      errorMessage.includes('sensilet') ||
+      errorMessage.includes('exodus') ||
+      errorMessage.includes('backpack') ||
+      errorMessage.includes('yours wallet') ||
+      errorMessage.includes('cannot redefine property: solana') ||
+      errorMessage.includes('cannot redefine property: ethereum')
+    
+    if (isExtensionError) {
+      // Silently ignore Chrome extension errors
+      console.warn('Chrome extension error caught and ignored:', error.message)
+      return
+    }
+    
+    // Log and handle real errors
     console.error('ErrorBoundary caught an error:', error, errorInfo)
     this.setState({
       error,

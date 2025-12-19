@@ -19,11 +19,19 @@ const nextConfig = {
     ]
   },
   // Prevent Next.js from trying to register service workers
-  webpack: (config, { isServer }) => {
+  webpack: (config, { isServer, dev }) => {
     if (!isServer) {
       config.resolve.fallback = {
         ...config.resolve.fallback,
         fs: false,
+      }
+    }
+    // Improve chunk stability in development
+    if (dev) {
+      config.optimization = {
+        ...config.optimization,
+        moduleIds: 'named',
+        chunkIds: 'named',
       }
     }
     return config

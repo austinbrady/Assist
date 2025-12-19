@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Send, Loader2, User, LogIn, LogOut, Sparkles, Settings, Zap, CheckCircle, ArrowRight, Heart, Menu, X } from 'lucide-react'
 import axios from 'axios'
+import { getAuthToken, setAuthToken as setAuthTokenUtil, removeAuthToken } from '../utils/auth'
 
 // Use environment variable for backend port, default to 4201 (AssistantAI assigned port)
 const BACKEND_PORT = process.env.NEXT_PUBLIC_BACKEND_PORT || process.env.MVP_BACKEND_PORT || '4201'
@@ -56,7 +57,8 @@ export default function Home() {
   }, [input])
 
   useEffect(() => {
-    const token = localStorage.getItem('auth_token')
+    // Use unified token utility (checks URL param, localStorage with fallback)
+    const token = getAuthToken()
     if (token) {
       setAuthToken(token)
       checkAuthStatus(token)
@@ -87,7 +89,7 @@ export default function Home() {
       setShowLogin(false)
       // Skip onboarding - everything happens in chat
     } catch (error) {
-      localStorage.removeItem('auth_token')
+      removeAuthToken()
       setShowLogin(true)
     }
   }
@@ -152,7 +154,7 @@ export default function Home() {
         alert(`✅ Account created successfully!\n\n📥 Your backup file has been downloaded.\n\n⚠️ IMPORTANT: Keep this file secure! It contains your login credentials and cryptocurrency wallet private keys.\n\nYour username is: ${username}`)
       }
       
-      localStorage.setItem('auth_token', token)
+      setAuthTokenUtil(token)
       setAuthToken(token)
       setIsAuthenticated(true)
       setShowLogin(false)
@@ -182,7 +184,7 @@ export default function Home() {
       })
       
       const token = response.data.token
-      localStorage.setItem('auth_token', token)
+      setAuthTokenUtil(token)
       setAuthToken(token)
       setIsAuthenticated(true)
       setShowLogin(false)
@@ -260,7 +262,7 @@ export default function Home() {
   }
 
   const handleLogout = () => {
-    localStorage.removeItem('auth_token')
+    removeAuthToken()
     setAuthToken(null)
     setIsAuthenticated(false)
     setShowLogin(true)

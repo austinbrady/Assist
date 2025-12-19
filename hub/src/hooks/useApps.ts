@@ -43,57 +43,54 @@ export function useApps() {
     try {
       setError(null)
       
-      // Always provide URLs - apps can be accessed directly
-      const initialApps = MAIN_APPS.map(app => ({
-        ...app,
-        status: 'stopped' as const,
-        url: `http://${baseUrl}:${app.port}`
-      }))
-      setApps(initialApps)
-      setLoading(false)
-      
-      // Then try to fetch from middleware API and update status
+      // Try to fetch from middleware API first (primary source of truth)
       try {
         const response = await axios.get(`${API_URL}/api/hub/apps`)
         const apiApps = response.data.apps || []
         
-        // Update apps with API status, but always keep URLs
-        const updatedApps = MAIN_APPS.map((mainApp) => {
-          const apiApp = apiApps.find((a: AppPortConfig) => a.id === mainApp.id)
-          const status = apiApp?.status || 'stopped'
-          
-          return {
-            ...mainApp,
-            status,
-            url: `http://${baseUrl}:${mainApp.port}` // Always provide URL
-          }
-        })
+        // Filter to show only frontend apps (users interact with frontends)
+        // Also exclude hub and middleware from the list
+        const frontendApps = apiApps.filter((app: AppPortConfig) => 
+          app.type === 'frontend' && 
+          app.enabled !== false &&
+          app.id !== 'hub' // Don't show hub in its own sidebar
+        )
         
-        setApps(updatedApps)
+        // Update with status and URLs
+        const appsWithStatus = frontendApps.map((app: AppPortConfig) => ({
+          ...app,
+          status: app.status || 'stopped',
+          url: `http://${baseUrl}:${app.port}`
+        }))
+        
+        setApps(appsWithStatus)
+        setLoading(false)
+        return
       } catch (apiError: any) {
-        console.log('API not available, checking app status manually')
-        // Fallback: check status manually for each app
+        console.log('API not available, using fallback apps')
+        // Fallback to MAIN_APPS if API unavailable
         const appsWithStatus = await Promise.all(
           MAIN_APPS.map(async (app) => {
             const status = await checkAppStatus(app)
             return {
               ...app,
               status,
-              url: `http://${baseUrl}:${app.port}` // Always provide URL
+              url: `http://${baseUrl}:${app.port}`
             }
           })
         )
         setApps(appsWithStatus)
+        setLoading(false)
       }
     } catch (error: any) {
       console.error('Error fetching apps:', error)
-      // Even on error, show the hardcoded apps with URLs
+      // Final fallback to MAIN_APPS
       setApps(MAIN_APPS.map(app => ({ 
         ...app, 
         status: 'stopped' as const,
         url: `http://${baseUrl}:${app.port}`
       })))
-      setError(null) // Don't show error if we have fallback apps
+      setError(null)
       setLoading(false)
     }
   }, [baseUrl])
@@ -102,17 +99,33 @@ export function useApps() {
     fetchApps()
   }, [fetchApps])
 
-  // Simplified: just return the URL - no API calls needed
+  // Start app via middleware API
   const startApp = useCallback(async (appId: string): Promise<{ success: boolean; url?: string; error?: string }> => {
-    const app = MAIN_APPS.find(a => a.id === appId)
-    if (app) {
+    try {
+      // Find app in current apps list to get port
+      const app = apps.find(a => a.id === appId)
+      if (!app) {
+        return { success: false, error: 'App not found' }
+      }
+      
+      // Call middleware API to start the app
+      await axios.post(`${API_URL}/api/hub/apps/${appId}/start`)
+      
+      // Refresh apps to get updated status
+      await fetchApps()
+      
       return { 
         success: true, 
         url: `http://${baseUrl}:${app.port}` 
       }
+    } catch (error: any) {
+      console.error('Error starting app:', error)
+      return { 
+        success: false, 
+        error: error.response?.data?.error || 'Failed to start app' 
+      }
     }
-    return { success: false, error: 'App not found' }
-  }, [baseUrl])
+  }, [baseUrl, apps, fetchApps])
 
   const stopApp = useCallback(async (appId: string) => {
     try {

@@ -171,7 +171,8 @@ function extractContent(): {
   // Extract visible headings
   const headingElements = document.querySelectorAll('h1, h2, h3, h4, h5, h6')
   headingElements.forEach((heading) => {
-    if (heading.offsetParent !== null) {
+    const htmlHeading = heading as HTMLElement
+    if (htmlHeading.offsetParent !== null) {
       const text = heading.textContent?.trim()
       if (text && text.length > 0) {
         headings.push(text.substring(0, 100)) // Limit length
@@ -191,8 +192,9 @@ function extractContent(): {
   
   for (const selector of contentSelectors) {
     const element = document.querySelector(selector)
-    if (element && element.offsetParent !== null) {
-      const text = element.textContent?.trim()
+    const htmlElement = element as HTMLElement | null
+    if (htmlElement && htmlElement.offsetParent !== null) {
+      const text = htmlElement.textContent?.trim()
       if (text && text.length > 50) {
         visibleTexts.push(text.substring(0, 500)) // Limit to 500 chars
         break // Use first substantial content area

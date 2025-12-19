@@ -32,7 +32,15 @@
   "options_page": "options/options.html",
   "web_accessible_resources": [
     {
-      "resources": ["content/floating-widget.js", "content/styles.css"],
+      "resources": [
+        "content/floating-widget.js",
+        "content/styles.css",
+        "assets/_plugin-vue_export-helper-*.js",
+        "assets/_plugin-vue_export-helper-959df103.js",
+        "assets/MerchantStatesController-*.js",
+        "assets/MerchantStatesController-51b36c03.js",
+        "assets/src/content/app-dabb4054.js"
+      ],
       "matches": ["<all_urls>"]
     }
   ],
