@@ -101,5 +101,32 @@ export class AuthClient {
   }
 }
 
+/**
+ * Get unified token from all possible sources
+ * Checks URL params first (for hub navigation), then localStorage
+ * This ensures static login across all apps
+ */
+export function getUnifiedToken(): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  // Check URL params first (for hub navigation)
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlToken = urlParams.get('token');
+  if (urlToken) {
+    localStorage.setItem('assisant_ai_token', urlToken);
+    // Clean up URL parameter
+    window.history.replaceState({}, '', window.location.pathname);
+    return urlToken;
+  }
+
+  // Check localStorage
+  const storedToken = localStorage.getItem('assisant_ai_token');
+  if (storedToken) return storedToken;
+
+  return null;
+}
+
 export default AuthClient;
 

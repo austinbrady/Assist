@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import axios from 'axios'
+import { getUnifiedToken } from '@assisant-ai/auth'
 import { AssistChat } from '../components/AssistChat'
 import { VariableInput } from '../components/VariableInput'
 
@@ -38,31 +39,22 @@ export default function PromptWriter() {
     dynamics: ''
   })
   
-  // Initialize: Check for token in URL parameter (from hub) and store it
+  // Initialize: Use unified token getter (handles URL params and localStorage)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search)
-      const urlToken = urlParams.get('token')
-      if (urlToken) {
-        // Store the token for use in API calls
-        localStorage.setItem('auth_token', urlToken)
-        localStorage.setItem('assisant_ai_token', urlToken)
-        // Clean up URL parameter
-        window.history.replaceState({}, '', window.location.pathname)
-      }
-    }
+    // getUnifiedToken() already handles URL params and localStorage
+    // No need for separate initialization
   }, [])
 
-  // Get userId from localStorage if available
+  // Get userId from token if available
   const getUserId = () => {
     if (typeof window !== 'undefined') {
-      // Try to get from auth token or localStorage
-      const token = localStorage.getItem('assisant_ai_token') || localStorage.getItem('auth_token')
+      // Use unified token getter
+      const token = getUnifiedToken()
       if (token) {
         try {
           // Decode JWT to get userId (simple base64 decode)
           const payload = JSON.parse(atob(token.split('.')[1]))
-          return payload.username || payload.userId || null
+          return payload.sub || payload.username || payload.userId || null
         } catch (e) {
           return null
         }
@@ -78,7 +70,7 @@ export default function PromptWriter() {
     try {
       const userId = getUserId()
       const token = typeof window !== 'undefined' 
-        ? (localStorage.getItem('assisant_ai_token') || localStorage.getItem('auth_token'))
+        ? getUnifiedToken()
         : null
       
       const headers: Record<string, string> = {}
@@ -161,7 +153,7 @@ export default function PromptWriter() {
     try {
       const userId = getUserId()
       const token = typeof window !== 'undefined' 
-        ? (localStorage.getItem('assisant_ai_token') || localStorage.getItem('auth_token'))
+        ? getUnifiedToken()
         : null
       
       const headers: Record<string, string> = {}
@@ -283,7 +275,7 @@ export default function PromptWriter() {
     try {
       const userId = getUserId()
       const token = typeof window !== 'undefined' 
-        ? (localStorage.getItem('assisant_ai_token') || localStorage.getItem('auth_token'))
+        ? getUnifiedToken()
         : null
       
       const headers: Record<string, string> = {}
@@ -389,7 +381,7 @@ export default function PromptWriter() {
       const userId = getUserId()
       // Get auth token if available
       const token = typeof window !== 'undefined' 
-        ? (localStorage.getItem('assisant_ai_token') || localStorage.getItem('auth_token'))
+        ? getUnifiedToken()
         : null
       
       const headers: Record<string, string> = {}

@@ -170,7 +170,7 @@ def execute_document_creation(username: str, task: str, parameters: Dict) -> Dic
 
 
 def execute_todo_list(username: str, task: str, parameters: Dict) -> Dict:
-    """Execute to-do list skill - create, manage, organize tasks"""
+    """Execute to-do list skill - create, manage, organize tasks with proactive suggestions"""
     user_data_dir = get_user_data_dir(username)
     todos_file = user_data_dir / "todos.json"
     
@@ -184,6 +184,23 @@ def execute_todo_list(username: str, task: str, parameters: Dict) -> Dict:
             pass
     
     task_lower = task.lower()
+    
+    # Proactive task extraction: If user mentions a task in conversation, suggest adding it
+    # This happens automatically when the skill is detected
+    proactive_task_suggestion = None
+    try:
+        import proactive_engine
+        # Check if this message contains task indicators
+        task_indicators = ['need to', 'have to', 'should', 'must', 'remind me', 'call', 'email', 'schedule']
+        if any(indicator in task_lower for indicator in task_indicators):
+            # Extract potential task
+            proactive_task_suggestion = {
+                "suggested": True,
+                "task": task[:100],  # First 100 chars as potential task
+                "confidence": 0.7
+            }
+    except Exception:
+        pass  # Proactive engine not available, continue normally
     
     if "add" in task_lower or "create" in task_lower:
         new_todo = {
@@ -228,8 +245,11 @@ def execute_todo_list(username: str, task: str, parameters: Dict) -> Dict:
         return {
             "action": "todo_added",
             "todo": new_todo,
+            "all_todos": todos,  # Include all todos for chat display
             "message": message,
-            "things3_sent": things3_result.get("success") if things3_result else False
+            "things3_sent": things3_result.get("success") if things3_result else False,
+            "count": len(todos),
+            "pending": len([t for t in todos if not t.get("completed", False)])
         }
     elif "complete" in task_lower or "done" in task_lower:
         todo_id = parameters.get("todo_id")
@@ -244,7 +264,10 @@ def execute_todo_list(username: str, task: str, parameters: Dict) -> Dict:
         
         return {
             "action": "todo_completed",
-            "message": "Task marked as completed"
+            "all_todos": todos,  # Include all todos for chat display
+            "message": "Task marked as completed",
+            "count": len(todos),
+            "pending": len([t for t in todos if not t.get("completed", False)])
         }
     elif "delete" in task_lower or "remove" in task_lower:
         todo_id = parameters.get("todo_id")
@@ -255,7 +278,10 @@ def execute_todo_list(username: str, task: str, parameters: Dict) -> Dict:
         
         return {
             "action": "todo_deleted",
-            "message": "Task deleted successfully"
+            "all_todos": todos,  # Include all todos for chat display
+            "message": "Task deleted successfully",
+            "count": len(todos),
+            "pending": len([t for t in todos if not t.get("completed", False)])
         }
     elif "edit" in task_lower or "update" in task_lower:
         todo_id = parameters.get("todo_id")
@@ -277,7 +303,10 @@ def execute_todo_list(username: str, task: str, parameters: Dict) -> Dict:
         
         return {
             "action": "todo_updated",
-            "message": "Task updated successfully"
+            "all_todos": todos,  # Include all todos for chat display
+            "message": "Task updated successfully",
+            "count": len(todos),
+            "pending": len([t for t in todos if not t.get("completed", False)])
         }
     elif "prioritize" in task_lower or "priority" in task_lower:
         todo_id = parameters.get("todo_id")
@@ -293,22 +322,34 @@ def execute_todo_list(username: str, task: str, parameters: Dict) -> Dict:
         
         return {
             "action": "todo_prioritized",
-            "message": f"Task priority set to {priority}"
+            "all_todos": todos,  # Include all todos for chat display
+            "message": f"Task priority set to {priority}",
+            "count": len(todos),
+            "pending": len([t for t in todos if not t.get("completed", False)])
         }
     elif "list" in task_lower or "show" in task_lower:
-        return {
+        result = {
             "action": "list_todos",
             "todos": todos,
             "count": len(todos),
             "pending": len([t for t in todos if not t.get("completed", False)]),
             "message": f"You have {len([t for t in todos if not t.get('completed', False)])} pending tasks"
         }
+        # Add proactive suggestions if available
+        if proactive_task_suggestion:
+            result["proactive_suggestion"] = proactive_task_suggestion
+        return result
     else:
-        return {
+        result = {
             "action": "todo_management",
             "message": "To-do list management ready. I can add, complete, and organize your tasks.",
             "capabilities": ["add", "list", "complete", "delete", "edit", "prioritize"]
         }
+        # Add proactive task suggestion if detected
+        if proactive_task_suggestion:
+            result["proactive_suggestion"] = proactive_task_suggestion
+            result["message"] += f"\n\n💡 I noticed you mentioned a task. Would you like me to add '{proactive_task_suggestion['task']}' to your to-do list?"
+        return result
 
 
 def execute_bills(username: str, task: str, parameters: Dict) -> Dict:

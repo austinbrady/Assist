@@ -14,23 +14,27 @@ const PERSONAL_AI_BASE_URL = process.env.PERSONAL_AI_BASE_URL || 'http://localho
  */
 authRouter.post('/login', async (req: Request, res: Response) => {
   try {
-    const { email, password } = req.body;
+    const { username, password } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password required' });
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password required' });
     }
 
     // Forward to PersonalAI authentication
     const response = await axios.post(`${PERSONAL_AI_BASE_URL}/api/auth/login`, {
-      email,
+      username,
       password
     });
 
-    // Return token and user info
+    // Return token and user info in standardized format
     res.json({
       token: response.data.token,
-      user: response.data.user,
-      expiresIn: response.data.expiresIn
+      user: {
+        username: response.data.username,
+        assistant: response.data.assistant,
+        onboarding_complete: response.data.onboarding_complete
+      },
+      expiresIn: '30d'
     });
 
   } catch (error: any) {
@@ -38,7 +42,7 @@ authRouter.post('/login', async (req: Request, res: Response) => {
     
     if (error.response) {
       return res.status(error.response.status).json({
-        error: error.response.data?.error || 'Authentication failed'
+        error: error.response.data?.detail || error.response.data?.error || 'Authentication failed'
       });
     }
 
@@ -52,22 +56,26 @@ authRouter.post('/login', async (req: Request, res: Response) => {
  */
 authRouter.post('/register', async (req: Request, res: Response) => {
   try {
-    const { email, password, name } = req.body;
+    const { username, password, gender } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password required' });
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password required' });
     }
 
     // Forward to PersonalAI registration
-    const response = await axios.post(`${PERSONAL_AI_BASE_URL}/api/auth/register`, {
-      email,
+    const response = await axios.post(`${PERSONAL_AI_BASE_URL}/api/auth/signup`, {
+      username,
       password,
-      name
+      gender: gender || null
     });
 
     res.json({
       token: response.data.token,
-      user: response.data.user,
+      user: {
+        username: response.data.username,
+        assistant: response.data.assistant,
+        onboarding_complete: response.data.onboarding_complete || false
+      },
       message: 'Registration successful'
     });
 
@@ -76,7 +84,7 @@ authRouter.post('/register', async (req: Request, res: Response) => {
     
     if (error.response) {
       return res.status(error.response.status).json({
-        error: error.response.data?.error || 'Registration failed'
+        error: error.response.data?.detail || error.response.data?.error || 'Registration failed'
       });
     }
 
@@ -150,16 +158,63 @@ authRouter.get('/verify', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Token required' });
     }
 
-    // Verify with PersonalAI
+    // Verify with PersonalAI by calling /api/auth/me
     const response = await axios.get(
-      `${PERSONAL_AI_BASE_URL}/api/auth/verify`,
+      `${PERSONAL_AI_BASE_URL}/api/auth/me`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
-    res.json({ valid: true, user: response.data.user });
+    res.json({ 
+      valid: true, 
+      user: {
+        username: response.data.username,
+        assistant: response.data.assistant,
+        onboarding_complete: response.data.onboarding_complete,
+        profile: response.data.profile
+      }
+    });
 
   } catch (error: any) {
     res.status(401).json({ valid: false, error: 'Invalid token' });
+  }
+});
+
+/**
+ * Get current user endpoint - proxies to PersonalAI
+ * GET /api/auth/me
+ */
+authRouter.get('/me', async (req: Request, res: Response) => {
+  try {
+    const token = req.headers['authorization']?.split(' ')[1];
+
+    if (!token) {
+      return res.status(401).json({ error: 'Token required' });
+    }
+
+    // Forward to PersonalAI
+    const response = await axios.get(
+      `${PERSONAL_AI_BASE_URL}/api/auth/me`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    // Return standardized user object
+    res.json({
+      username: response.data.username,
+      assistant: response.data.assistant,
+      onboarding_complete: response.data.onboarding_complete || false,
+      profile: response.data.profile || null
+    });
+
+  } catch (error: any) {
+    logger.error('Get current user error', { error: error.message });
+    
+    if (error.response) {
+      return res.status(error.response.status).json({
+        error: error.response.data?.detail || 'Failed to get user info'
+      });
+    }
+
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

@@ -256,13 +256,19 @@ Generate a complete script to solve this problem. Use Python unless the problem 
                 with open(solution_dir / "metadata.json", 'w') as f:
                     json.dump(metadata, f, indent=2)
                 
+                # Enhanced return for chat display
                 return {
                     "success": True,
                     "solution_id": solution_id,
                     "type": "script",
+                    "name": analysis.get("description", "Custom Script")[:50],
+                    "description": analysis.get("description", "A script to solve your problem"),
                     "filepath": str(filepath),
                     "filename": filename,
-                    "message": f"I've created a {filename} script to solve your problem. You can run it from: {filepath}"
+                    "download_url": f"/api/solutions/{solution_id}/download",
+                    "preview_url": f"/api/solutions/{solution_id}/preview",
+                    "message": f"I've created a {filename} script to solve your problem. You can run it from: {filepath}",
+                    "created_at": datetime.now().isoformat()
                 }
     except Exception as e:
         print(f"Error generating script: {e}")
@@ -472,12 +478,24 @@ python3 main.py
                         json.dump(metadata, f, indent=2)
                     
                     features_list = ", ".join(metadata.get("features", [])[:5])
+                    
+                    # Enhanced return for chat display
                     return {
                         "success": True,
                         "solution_id": solution_id,
                         "type": "app",
+                        "name": analysis.get("description", "Custom Application")[:50],  # App name
+                        "description": analysis.get("description", "A GUI application to solve your problem"),
                         "filepath": str(solution_dir),
-                        "message": f"I've created a complete GUI application with {features_list}. The app includes data tracking, history logging, charts, and beautiful PDF/CSV exports. Files are in: {solution_dir}"
+                        "download_url": f"/api/solutions/{solution_id}/download",  # For chat download button
+                        "preview_url": f"/api/solutions/{solution_id}/preview",  # For chat preview
+                        "features": metadata.get("features", analysis.get("features", [])),
+                        "message": f"I've created a complete GUI application with {features_list}. The app includes data tracking, history logging, charts, and beautiful PDF/CSV exports. Files are in: {solution_dir}",
+                        # Additional metadata for chat display
+                        "has_gui": metadata.get("has_gui", True),
+                        "has_exports": metadata.get("has_exports", True),
+                        "has_tracking": metadata.get("has_tracking", True),
+                        "created_at": metadata.get("created_at")
                     }
     except Exception as e:
         print(f"Error generating app: {e}")
@@ -502,9 +520,42 @@ def list_user_solutions(username: str) -> List[Dict]:
                 try:
                     with open(metadata_file, 'r') as f:
                         metadata = json.load(f)
+                        # Enhance metadata with chat display info
+                        metadata["download_url"] = f"/api/solutions/{metadata.get('solution_id')}/download"
+                        metadata["preview_url"] = f"/api/solutions/{metadata.get('solution_id')}/preview"
                         solutions.append(metadata)
                 except Exception:
                     pass
     
     return sorted(solutions, key=lambda x: x.get("created_at", ""), reverse=True)
+
+def get_proactive_app_suggestion(username: str, problem_keyword: str) -> Optional[Dict]:
+    """
+    Generate proactive app suggestion based on detected problem pattern
+    Returns suggestion for chat display
+    """
+    try:
+        # Check if user already has a solution for this problem
+        existing_solutions = list_user_solutions(username)
+        for solution in existing_solutions:
+            problem = solution.get("problem", "").lower()
+            if problem_keyword.lower() in problem:
+                # User already has a solution for this
+                return None
+        
+        # Generate suggestion
+        return {
+            "suggestion_id": f"app_suggestion_{datetime.now().timestamp()}",
+            "type": "app_suggestion",
+            "title": f"I noticed you mention '{problem_keyword}' often",
+            "message": f"Would you like me to create a custom application to help with {problem_keyword}?",
+            "action": "create_app",
+            "action_data": {
+                "problem": problem_keyword
+            },
+            "confidence": 0.8,
+            "created_at": datetime.now().isoformat()
+        }
+    except Exception:
+        return None
 

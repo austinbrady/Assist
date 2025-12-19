@@ -54,6 +54,27 @@ try:
 except ImportError:
     EMAIL_INTEGRATION_AVAILABLE = False
     logging.warning("Email integration not available")
+
+try:
+    import email_system
+    EMAIL_SYSTEM_AVAILABLE = True
+except ImportError:
+    EMAIL_SYSTEM_AVAILABLE = False
+    logging.warning("Email system not available")
+
+try:
+    import phone_system
+    PHONE_SYSTEM_AVAILABLE = True
+except ImportError:
+    PHONE_SYSTEM_AVAILABLE = False
+    logging.warning("Phone system not available")
+
+try:
+    import proactive_engine
+    PROACTIVE_ENGINE_AVAILABLE = True
+except ImportError:
+    PROACTIVE_ENGINE_AVAILABLE = False
+    logging.warning("Proactive engine not available")
 try:
     from music_generator import get_music_generator
     MUSIC_GEN_AVAILABLE = True
@@ -96,13 +117,17 @@ security = HTTPBearer()
 app = FastAPI(title="Personal AI API")
 
 # CORS middleware for frontend communication (local network access)
-# Frontend runs on port 7777
-# Note: Cannot use allow_origins=["*"] with allow_credentials=True in FastAPI
-# Since we use Bearer tokens in headers (not cookies), we can safely remove allow_credentials
-# This allows any origin to access the API, which is fine for local development
+# Allow specific origins for hub and frontend access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for local network access
+    allow_origins=[
+        "http://localhost:4200",  # Central Hub
+        "http://localhost:4203",  # PersonalAI Frontend
+        "http://localhost:4199",  # Middleware
+        "http://127.0.0.1:4200",
+        "http://127.0.0.1:4203",
+        "http://127.0.0.1:4199",
+    ],
     allow_credentials=False,  # Not needed since we use Bearer tokens, not cookies
     allow_methods=["*"],
     allow_headers=["*"],
@@ -150,6 +175,7 @@ class ChatMessage(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     conversation_id: str
+    proactive_suggestions: Optional[List[Dict]] = None  # Proactive suggestions for chat display
 
 class ImageEditRequest(BaseModel):
     file_id: str
@@ -4323,10 +4349,61 @@ Remember: You are {assistant['name']}. Act according to your personality: {assis
             result = response.json()
             ai_response = result.get("message", {}).get("content", "I'm sorry, I couldn't process that request.")
             
+            # Check for email/phone/app generation requests and execute them
+            user_message_lower = message.message.lower()
+            email_phone_result = None
+            
+            # Detect email requests
+            if any(phrase in user_message_lower for phrase in ["send email", "write email", "email to", "draft email"]):
+                try:
+                    if EMAIL_SYSTEM_AVAILABLE:
+                        # Extract recipient and subject from message
+                        draft = email_system.draft_email_from_natural_language(username, message.message)
+                        email_phone_result = {
+                            "type": "email_draft",
+                            "draft": draft,
+                            "message": f"I've drafted an email for you. Review it below and let me know if you'd like to send it or make changes."
+                        }
+                except Exception as e:
+                    logger.debug(f"Email draft failed: {e}")
+            
+            # Detect phone call requests
+            elif any(phrase in user_message_lower for phrase in ["call", "phone", "ring"]):
+                try:
+                    if PHONE_SYSTEM_AVAILABLE:
+                        # Extract phone number and time from message
+                        # Simple extraction - in production, use NLP
+                        phone_match = re.search(r'\+?\d{10,}', message.message)
+                        if phone_match:
+                            phone_number = phone_match.group()
+                            # Check if it's a scheduled call
+                            if any(word in user_message_lower for word in ["tomorrow", "later", "schedule", "at"]):
+                                # Schedule call
+                                scheduled_time = datetime.now() + timedelta(days=1)  # Default to tomorrow
+                                result_data = phone_system.schedule_call(username, phone_number, scheduled_time.isoformat())
+                                email_phone_result = {
+                                    "type": "phone_scheduled",
+                                    "call": result_data,
+                                    "message": f"Call scheduled to {phone_number} for {scheduled_time.strftime('%Y-%m-%d %H:%M')}"
+                                }
+                            else:
+                                # Make call now
+                                result_data = phone_system.make_phone_call(username, phone_number)
+                                email_phone_result = {
+                                    "type": "phone_call",
+                                    "call": result_data,
+                                    "message": result_data.get("message", f"Calling {phone_number}...")
+                                }
+                except Exception as e:
+                    logger.debug(f"Phone call failed: {e}")
+            
             # If skills were detected and executed, include skill result in response
             if detected_skills and skill_result:
                 skill_info = f"\n\n[Skill: {detected_skills[0]['skill_name']} executed] {skill_result.get('message', '')}"
                 ai_response = ai_response + skill_info
+            
+            # If email/phone action was taken, include it in response metadata (frontend will display it)
+            # Don't modify ai_response - let frontend handle display based on action_result
             
             # Check if user is requesting image generation (move to background task for faster response)
             generated_image_ids = []
@@ -4391,6 +4468,17 @@ Remember: You are {assistant['name']}. Act according to your personality: {assis
             # Log AI response
             log_chat_message(username, conversation_id, "assistant", ai_response)
             
+            # Get proactive suggestions (non-blocking, background check)
+            proactive_suggestions = []
+            if PROACTIVE_ENGINE_AVAILABLE and username:
+                try:
+                    # Check for proactive suggestions (only high confidence ones)
+                    suggestions = proactive_engine.get_proactive_suggestions(username, limit=1)
+                    # Only include suggestions with high confidence
+                    proactive_suggestions = [s for s in suggestions if s.get("confidence", 0) >= 0.7]
+                except Exception as e:
+                    logger.debug(f"Proactive suggestions check failed (non-critical): {e}")
+            
             # Learn from this conversation (non-blocking, background task)
             if LEARNER_ENABLED and username:
                 async def learn_from_conversation_background():
@@ -4425,11 +4513,28 @@ Remember: You are {assistant['name']}. Act according to your personality: {assis
                 import asyncio
                 asyncio.create_task(learn_from_conversation_background())
             
-            return ChatResponse(
-                response=ai_response,
-                conversation_id=conversation_id,
-                generated_image_ids=generated_image_ids if generated_image_ids else None
-            )
+            # Build response dict (ChatResponse model may not have all fields)
+            response_data = {
+                "response": ai_response,
+                "conversation_id": conversation_id
+            }
+            
+            # Add optional fields if they exist
+            if generated_image_ids:
+                response_data["generated_image_ids"] = generated_image_ids
+            if proactive_suggestions:
+                response_data["proactive_suggestions"] = proactive_suggestions
+            if email_phone_result:
+                response_data["action_result"] = email_phone_result  # For chat display
+            if skill_result:
+                # Add skill result metadata for chat display
+                response_data["skill_result"] = {
+                    "skill_id": detected_skills[0]["skill_id"] if detected_skills else None,
+                    "skill_name": detected_skills[0]["skill_name"] if detected_skills else None,
+                    "result": skill_result
+                }
+            
+            return ChatResponse(**response_data)
             
     except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="Request timeout - model may be loading")
@@ -8109,6 +8214,302 @@ async def analyze_and_generate_skills(username: str):
                     skill_generator.process_emails_for_skill(skill_config, emails)
     except Exception as e:
         logger.error(f"Error in background skill generation: {e}")
+
+# Email System Endpoints (for chat integration)
+@app.post("/api/email/draft")
+async def draft_email(request: dict = Body(...), authorization: Optional[str] = Header(None)):
+    """Generate email draft from natural language description"""
+    if not EMAIL_SYSTEM_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Email system not available")
+    
+    username = get_current_user(authorization)
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    description = request.get("description", "")
+    context = request.get("context")
+    
+    if not description:
+        raise HTTPException(status_code=400, detail="Description is required")
+    
+    try:
+        draft = email_system.draft_email_from_natural_language(username, description, context)
+        return {
+            "success": True,
+            "draft": draft,
+            "preview_html": f"<div><strong>To:</strong> {draft.get('to', '')}</div><div><strong>Subject:</strong> {draft.get('subject', '')}</div><div><strong>Body:</strong><pre>{draft.get('body', '')}</pre></div>"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create draft: {str(e)}")
+
+@app.post("/api/email/send")
+async def send_email_endpoint(request: dict = Body(...), authorization: Optional[str] = Header(None)):
+    """Send email - returns result for chat display"""
+    if not EMAIL_SYSTEM_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Email system not available")
+    
+    username = get_current_user(authorization)
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    to = request.get("to")
+    subject = request.get("subject")
+    body = request.get("body")
+    html_body = request.get("html_body")
+    attachments = request.get("attachments", [])
+    
+    if not to or not subject or not body:
+        raise HTTPException(status_code=400, detail="to, subject, and body are required")
+    
+    try:
+        result = email_system.send_email(username, to, subject, body, html_body, attachments)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
+
+@app.get("/api/email/preview/{draft_id}")
+async def get_email_preview(draft_id: str, authorization: Optional[str] = Header(None)):
+    """Get email draft preview"""
+    if not EMAIL_SYSTEM_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Email system not available")
+    
+    username = get_current_user(authorization)
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    draft = email_system.get_email_draft(username, draft_id)
+    if not draft:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    
+    return {
+        "success": True,
+        "draft": draft,
+        "preview_html": f"<div><strong>To:</strong> {draft.get('to', '')}</div><div><strong>Subject:</strong> {draft.get('subject', '')}</div><div><strong>Body:</strong><pre>{draft.get('body', '')}</pre></div>"
+    }
+
+@app.post("/api/email/configure")
+async def configure_email(request: dict = Body(...), authorization: Optional[str] = Header(None)):
+    """Configure email settings (SMTP)"""
+    if not EMAIL_SYSTEM_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Email system not available")
+    
+    username = get_current_user(authorization)
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    config = {
+        "email": request.get("email"),
+        "password": request.get("password"),
+        "smtp_host": request.get("smtp_host", "smtp.gmail.com"),
+        "smtp_port": request.get("smtp_port", 587),
+        "from_email": request.get("from_email", request.get("email"))
+    }
+    
+    if not config["email"] or not config["password"]:
+        raise HTTPException(status_code=400, detail="email and password are required")
+    
+    try:
+        saved_config = email_system.save_email_config(username, config)
+        return {
+            "success": True,
+            "message": "Email configured successfully",
+            "config": {k: v for k, v in saved_config.items() if k != "password" and k != "encrypted_password"}
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to configure email: {str(e)}")
+
+@app.get("/api/email/history")
+async def get_email_history_endpoint(authorization: Optional[str] = Header(None)):
+    """Get email history"""
+    if not EMAIL_SYSTEM_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Email system not available")
+    
+    username = get_current_user(authorization)
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    try:
+        history = email_system.get_email_history(username, limit=20)
+        return {
+            "success": True,
+            "emails": history
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get email history: {str(e)}")
+
+# Phone System Endpoints (for chat integration)
+@app.post("/api/phone/call")
+async def make_call_endpoint(request: dict = Body(...), authorization: Optional[str] = Header(None)):
+    """Make a phone call - returns result for chat display"""
+    if not PHONE_SYSTEM_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Phone system not available")
+    
+    username = get_current_user(authorization)
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    to_phone = request.get("to")
+    from_phone = request.get("from")
+    
+    if not to_phone:
+        raise HTTPException(status_code=400, detail="to phone number is required")
+    
+    try:
+        result = phone_system.make_phone_call(username, to_phone, from_phone)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to make call: {str(e)}")
+
+@app.post("/api/phone/schedule")
+async def schedule_call_endpoint(request: dict = Body(...), authorization: Optional[str] = Header(None)):
+    """Schedule a phone call for later - returns result for chat display"""
+    if not PHONE_SYSTEM_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Phone system not available")
+    
+    username = get_current_user(authorization)
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    to_phone = request.get("to")
+    scheduled_time = request.get("scheduled_time")
+    from_phone = request.get("from")
+    notes = request.get("notes")
+    
+    if not to_phone or not scheduled_time:
+        raise HTTPException(status_code=400, detail="to and scheduled_time are required")
+    
+    try:
+        result = phone_system.schedule_call(username, to_phone, scheduled_time, from_phone, notes)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to schedule call: {str(e)}")
+
+@app.get("/api/phone/history")
+async def get_call_history_endpoint(authorization: Optional[str] = Header(None)):
+    """Get call history"""
+    if not PHONE_SYSTEM_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Phone system not available")
+    
+    username = get_current_user(authorization)
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    try:
+        history = phone_system.get_call_history(username, limit=20)
+        return {
+            "success": True,
+            "calls": history
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get call history: {str(e)}")
+
+@app.get("/api/phone/scheduled")
+async def get_scheduled_calls_endpoint(authorization: Optional[str] = Header(None)):
+    """Get scheduled calls"""
+    if not PHONE_SYSTEM_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Phone system not available")
+    
+    username = get_current_user(authorization)
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    try:
+        scheduled = phone_system.get_scheduled_calls(username)
+        return {
+            "success": True,
+            "scheduled_calls": scheduled
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get scheduled calls: {str(e)}")
+
+@app.post("/api/phone/cancel")
+async def cancel_scheduled_call_endpoint(request: dict = Body(...), authorization: Optional[str] = Header(None)):
+    """Cancel a scheduled call"""
+    if not PHONE_SYSTEM_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Phone system not available")
+    
+    username = get_current_user(authorization)
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    call_id = request.get("call_id")
+    if not call_id:
+        raise HTTPException(status_code=400, detail="call_id is required")
+    
+    try:
+        result = phone_system.cancel_scheduled_call(username, call_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to cancel call: {str(e)}")
+
+# Proactive Engine Endpoints (for chat integration)
+@app.get("/api/proactive/suggestions")
+async def get_proactive_suggestions_endpoint(authorization: Optional[str] = Header(None)):
+    """Get proactive suggestions for user - displayed in chat"""
+    if not PROACTIVE_ENGINE_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Proactive engine not available")
+    
+    username = get_current_user(authorization)
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    try:
+        suggestions = proactive_engine.get_proactive_suggestions(username, limit=5)
+        return {
+            "success": True,
+            "suggestions": suggestions
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get suggestions: {str(e)}")
+
+@app.post("/api/proactive/analyze")
+async def analyze_patterns_endpoint(authorization: Optional[str] = Header(None)):
+    """Analyze user patterns and generate suggestions"""
+    if not PROACTIVE_ENGINE_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Proactive engine not available")
+    
+    username = get_current_user(authorization)
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    try:
+        suggestions = proactive_engine.analyze_patterns(username)
+        return {
+            "success": True,
+            "suggestions": suggestions,
+            "count": len(suggestions)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to analyze patterns: {str(e)}")
+
+@app.post("/api/proactive/extract-tasks")
+async def extract_tasks_from_conversation_endpoint(request: dict = Body(...), authorization: Optional[str] = Header(None)):
+    """Extract tasks from a conversation and suggest adding to to-do list"""
+    if not PROACTIVE_ENGINE_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Proactive engine not available")
+    
+    username = get_current_user(authorization)
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    conversation_id = request.get("conversation_id")
+    if not conversation_id:
+        raise HTTPException(status_code=400, detail="conversation_id is required")
+    
+    try:
+        suggestion = proactive_engine.suggest_task_from_conversation(username, conversation_id)
+        if suggestion:
+            return {
+                "success": True,
+                "suggestion": suggestion
+            }
+        else:
+            return {
+                "success": False,
+                "message": "No tasks detected in conversation"
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to extract tasks: {str(e)}")
 
 if __name__ == "__main__":
     # Get port from environment variable (set by AssistantAI port manager) or default to 4202

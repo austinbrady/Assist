@@ -6,6 +6,12 @@ import { useAuth } from '@/hooks/useAuth'
 import { useContextDetection } from '@/hooks/useContextDetection'
 import styles from './ChatWindow.module.css'
 
+interface MessageAction {
+  label: string
+  action: string
+  data?: any
+}
+
 interface Message {
   id: string
   role: 'user' | 'assistant'
@@ -13,6 +19,12 @@ interface Message {
   timestamp: Date
   appSuggestion?: AppPortConfig
   attachments?: FileAttachment[]
+  // Rich content types for backend execution results
+  audioUrl?: string        // For songs, audio files
+  fileUrl?: string         // For downloads (apps, documents)
+  previewUrl?: string      // For app previews, email drafts
+  actions?: MessageAction[] // For interactive buttons
+  metadata?: any           // For structured data (tasks, emails, calls, etc.)
 }
 
 interface FileAttachment {

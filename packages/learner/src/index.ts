@@ -180,6 +180,46 @@ export class Learner {
     const insight = insights.find(i => i.key === key);
     return insight && insight.confidence > 0.5 ? insight.value : null;
   }
+
+  /**
+   * Get proactive patterns (temporal, problem, goal, workflow)
+   * These are patterns detected by the proactive engine
+   */
+  async getProactivePatterns(): Promise<UserInsight[]> {
+    if (!this.token) {
+      throw new Error('Authentication token required');
+    }
+
+    try {
+      const response = await fetch(`${this.baseUrl}/api/proactive/suggestions`, {
+        headers: {
+          'Authorization': `Bearer ${this.token}`
+        }
+      });
+
+      if (!response.ok) {
+        return [];
+      }
+
+      const data = await response.json();
+      const suggestions = data.suggestions || [];
+      
+      // Convert suggestions to insights format
+      return suggestions.map((s: any) => ({
+        category: 'pattern' as const,
+        key: s.type || 'proactive',
+        value: s.message || s.title,
+        confidence: s.confidence || 0.5,
+        sources: [s.suggestion_id || ''],
+        firstLearned: s.created_at || new Date().toISOString(),
+        lastUpdated: s.created_at || new Date().toISOString(),
+        frequency: 1
+      }));
+    } catch (error) {
+      // Fail silently
+      return [];
+    }
+  }
 }
 
 export default Learner;
